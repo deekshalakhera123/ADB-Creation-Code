@@ -36,7 +36,7 @@ COMMERCIAL_LOADING  = 1.40
 
 # ── Property type classification ──────────────────────────────────────────────
 RESIDENTIAL_TYPES = [
-    "Flat", "Apartment", "Room", "Bunglow", "Showroom", "Studio", "Hall",
+    "Flat", "Apartment", "Room", "Bunglow", "Studio", "Hall",
     "Duplex", "Flat/Shop", "Row_House", "Penthouse", "Triplex", "Triplex Apartment",
 ]
 COMMERCIAL_TYPES = [
@@ -45,6 +45,8 @@ COMMERCIAL_TYPES = [
 
 # ── Price range step ──────────────────────────────────────────────────────────
 PRICE_STEP = 2_000_000  # 20 Lakhs
+AREA_STEP = 200
+RATE_STEP = 1000
 
 # ── BHK exclusions ────────────────────────────────────────────────────────────
 NON_BHK_VALUES = ["Shop", "Office", "Others"]

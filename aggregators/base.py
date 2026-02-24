@@ -65,13 +65,9 @@ def create_pivot(
 def apply_and_merge(
     df: pd.DataFrame, group_cols: list, func, suffix: str
 ) -> pd.DataFrame:
-    """
-    Apply func(group_df, segment_key) across groups, unstack, add suffix.
-    segment_key = the last element of the groupby key (property_type or BHK).
-    """
     return (
         df.groupby(group_cols)
-        .apply(lambda g: func(g, g.name[2]))
+        .apply(lambda g: func(g, g.name[-1] if isinstance(g.name, tuple) else g.name))
         .unstack()
         .add_suffix(suffix)
         .reset_index()
@@ -105,6 +101,68 @@ def process_price_ranges(
         for segment, details in seg_data.items():
             for metric, value in details.items():
                 row[f"{segment}_agreement_price_range_{metric}"] = value
+        output.append(row)
+
+    return pd.DataFrame(output)
+
+def process_rate_ranges(
+    df: pd.DataFrame,
+    group_cols: list,
+    calc_func,
+    proj_cols: list,
+) -> pd.DataFrame:
+    """
+    Build a wide rate-range DataFrame by calling calc_func per group.
+    Mirrors process_price_ranges — same shape, different stat source.
+
+    proj_cols : the key columns (e.g. ['index', 'project_name'])
+    """
+    if df.empty:
+        return pd.DataFrame(columns=proj_cols)
+
+    rows = {}
+    for (*key_parts, segment), group_data in df.groupby(group_cols):
+        key = tuple(key_parts)
+        rows.setdefault(key, {})[segment] = calc_func(group_data, segment)
+
+    output = []
+    for key, seg_data in rows.items():
+        row = dict(zip(proj_cols, key))
+        for segment, details in seg_data.items():
+            for metric, bucket in details.items():
+                # e.g. Flat_rate_range_unit_sold, Flat_rate_range_total_sales ...
+                row[f"{segment}_rate_range_{metric}"] = bucket
+        output.append(row)
+
+    return pd.DataFrame(output)
+
+
+def process_age_ranges(
+    df: pd.DataFrame,
+    group_cols: list,
+    calc_func,
+    proj_cols: list,
+) -> pd.DataFrame:
+    """
+    Build a wide age-range DataFrame by calling calc_func per group.
+    Mirrors process_rate_ranges — same shape, different stat source.
+
+    proj_cols : the key columns (e.g. ['index', 'project_name'])
+    """
+    if df.empty:
+        return pd.DataFrame(columns=proj_cols)
+
+    rows = {}
+    for (*key_parts, segment), group_data in df.groupby(group_cols):
+        key = tuple(key_parts)
+        rows.setdefault(key, {})[segment] = calc_func(group_data, segment)
+
+    output = []
+    for key, seg_data in rows.items():
+        row = dict(zip(proj_cols, key))
+        for segment, details in seg_data.items():
+            for metric, bucket in details.items():
+                row[f"{segment}_age_range_{metric}"] = bucket
         output.append(row)
 
     return pd.DataFrame(output)

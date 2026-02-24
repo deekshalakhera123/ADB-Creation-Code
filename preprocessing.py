@@ -61,6 +61,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     # Derived area & rate columns
     df["carpet_sqft"]    = df["net_carpet_area_sqmt"] * 10.764
+    # --------TAG
+    df["agreement_price"] = df["agreement_price"].astype(float)
     df["rate_on_net_ca"] = df["agreement_price"] / df["carpet_sqft"]
 
     # Saleable area + rate

@@ -29,21 +29,39 @@ def percentile_rate(
     if n == 1:
         return data[0]
     index = (90 / 100) * (n - 1) + 1
-    v1    = data[int(index) - 1]
-    v2    = data[int(index)]
+    i = min(int(index), n - 1)
+    v1 = data[i - 1]
+    v2 = data[i]
     diff  = round(index - int(index), 1)
     return round(v1 + diff * (v2 - v1), 2)
 
 
-def most_prevailing_rate_on_ca(df: pd.DataFrame, property_type: str):
-    """±5% band around the 90th-percentile rate on net carpet area."""
+def most_prevailing_rate_on_ca(
+    df: pd.DataFrame,
+    property_type: str,
+    percentile: int = 90,
+    band_pct: float = 0.05,
+):
+    """
+    Generic prevailing rate band.
+    percentile : percentile to use (e.g. 90, 80)
+    band_pct   : band width (0.05 = ±5%)
+    """
+
     segment = df[
-        (df["property_type"] == property_type) & (df["rate_on_net_ca"] > 0)
+        (df["property_type"] == property_type)
+        & (df["rate_on_net_ca"] > 0)
     ]
+
     if segment.empty:
         return 0
-    p90 = percentile_rate(segment, property_type)
-    return f"{int(p90 * 0.95)}-{int(p90 * 1.05)}"
+
+    p_val = segment["rate_on_net_ca"].quantile(percentile / 100)
+
+    lower = int(p_val * (1 - band_pct))
+    upper = int(p_val * (1 + band_pct))
+
+    return f"{lower}-{upper}"
 
 
 def _build_rate_bins(mean: int, interval: int = 1000):
@@ -58,27 +76,77 @@ def _build_rate_bins(mean: int, interval: int = 1000):
     return edges, labels
 
 
-def create_rate_ranges(df: pd.DataFrame, property_type: str) -> dict:
-    """Sold-unit counts per rate-range bucket — property-type wise."""
-    valid = df[df["rate_on_net_ca"] > 0]
-    if valid.empty:
-        return {}
+def _build_rate_bins_generalize(
+    min_val: float,
+    max_val: float,
+    interval: int = 1000,
+):
+    """
+    Build bins strictly between user-provided min and max.
+    """
 
-    rate_mean = valid["rate_on_net_ca"].mean()
-    mean = 0 if pd.isna(rate_mean) else int(round(rate_mean, -2))
+    start = int(min_val)
+    end   = int(max_val)
+
+    start = int(min_val)
+    end   = int(max_val)
+    inner = list(range(start, end + interval, interval))
+    
+    edges  = [-np.inf] + inner + [np.inf]
+    labels = (
+        [f"<{inner[0]}"]
+        + [f"{inner[i]}-{inner[i+1]}" for i in range(len(inner) - 1)]
+        + [f">{inner[-1]}"]
+    )
+
+    return edges, labels
+
+
+def create_rate_ranges(
+    df: pd.DataFrame,
+    property_type: str,
+    bin_strategy: str = "mean",
+    interval: int = 1000,
+    min_val: float = None,
+    max_val: float = None,
+) -> dict:
 
     segment = df[
-        (df["property_type"] == property_type) & (df["rate_on_net_ca"] > 0)
+        (df["property_type"] == property_type)
+        & (df["rate_on_net_ca"] > 0)
     ].copy()
+
     if segment.empty:
         return {}
 
-    edges, labels = _build_rate_bins(mean)
+    if bin_strategy == "mean":
+
+        rate_mean = segment["rate_on_net_ca"].mean()
+        mean = 0 if pd.isna(rate_mean) else int(round(rate_mean / interval) * interval)
+        edges, labels = _build_rate_bins(mean, interval)
+
+    elif bin_strategy == "fixed":
+
+        if min_val is None or max_val is None:
+            raise ValueError("min_val and max_val must be provided for fixed bin strategy")
+
+        edges, labels = _build_rate_bins_generalize(min_val, max_val, interval)
+
+    else:
+        raise ValueError("Invalid bin_strategy")
+
     segment["rate_range"] = pd.cut(
-        segment["rate_on_net_ca"], bins=edges, labels=labels, right=False
+        segment["rate_on_net_ca"],
+        bins=edges,
+        labels=labels,
+        right=False,
+        include_lowest=True,
     )
+
     result = segment["rate_range"].value_counts().to_dict()
+
     return {k: v for k, v in result.items() if pd.notna(v) and v != 0}
+
 
 
 def get_floor_wise_90p_rate(df: pd.DataFrame, floor_interval: int = 5) -> dict:
@@ -113,3 +181,110 @@ def floor_wise_wrapper(df: pd.DataFrame, segment_val) -> dict:
     segment_val is already isolated by the groupby — just forwarded.
     """
     return get_floor_wise_90p_rate(df)
+
+
+
+
+# ============================================================
+# RATE RANGE STATS ENGINE  (sold / total price / carpet area)
+# ============================================================
+
+def _summarise_rate_ranges(df: pd.DataFrame) -> dict:
+    """
+    For a df that already has a 'rate_range' column,
+    return unit_sold, total_sales, carpet_area_consumed per bucket.
+    """
+    summary = (
+        df.groupby("rate_range", observed=False)
+        .agg(
+            unit_sold                  =("agreement_price",  "size"),
+            total_sales                =("agreement_price",  "sum"),
+            carpet_area_consumed_sqft  =("carpet_sqft",      "sum"),
+        )
+        .reset_index()
+    )
+    idx = summary.set_index("rate_range")
+    return {
+        "unit_sold":                     idx["unit_sold"].to_dict(),
+        "total_sales":                   idx["total_sales"].to_dict(),
+        "carpet_area_consumed_in_sqft":  idx["carpet_area_consumed_sqft"].to_dict(),
+    }
+
+
+def create_rate_range_stats(
+    df: pd.DataFrame,
+    filter_col: str,
+    filter_val,
+    bin_strategy: str = "mean",
+    interval: int = 1000,
+    min_val: float = None,
+    max_val: float = None,
+) -> dict:
+    """
+    Generic rate-range statistics engine.
+    Returns unit_sold / total_sales / carpet_area_consumed per rate bucket.
+
+    bin_strategy : "mean" → bins centred on mean
+                   "fixed" → user-supplied min_val / max_val
+    """
+    segment = df[df["rate_on_net_ca"] > 0].copy()
+    if segment.empty:
+        return {}
+
+    # Apply filter
+    if filter_col in segment.columns:
+        segment = segment[segment[filter_col] == filter_val].copy()
+    if segment.empty:
+        return {}
+
+    # Build bins
+    if bin_strategy == "mean":
+        rate_mean = segment["rate_on_net_ca"].mean()
+        mean = 0 if pd.isna(rate_mean) else int(round(rate_mean / interval) * interval)
+        edges, labels = _build_rate_bins(mean, interval)
+
+    elif bin_strategy == "fixed":
+        if min_val is None or max_val is None:
+            raise ValueError("min_val and max_val required for fixed bin strategy")
+        edges, labels = _build_rate_bins_generalize(min_val, max_val, interval)
+
+    else:
+        raise ValueError("Invalid bin_strategy. Use 'mean' or 'fixed'.")
+
+    segment["rate_range"] = pd.cut(
+        segment["rate_on_net_ca"],
+        bins=edges,
+        labels=labels,
+        right=False,
+        include_lowest=True,
+    )
+
+    result = _summarise_rate_ranges(segment)
+
+    # Strip zero / NaN buckets from each sub-dict
+    return {
+        metric: {k: v for k, v in bucket.items() if pd.notna(v) and v != 0}
+        for metric, bucket in result.items()
+    }
+
+
+# ── Property-type wrapper ──────────────────────────────────────────────────────
+
+def create_rate_range_stats_by_property_type(
+    df: pd.DataFrame,
+    property_type: str,
+    **kwargs,
+) -> dict:
+    """Unit sold / total sales / carpet area consumed — per rate range, per property type."""
+    return create_rate_range_stats(df, "property_type", property_type, **kwargs)
+
+
+# ── BHK wrapper ───────────────────────────────────────────────────────────────
+
+def create_rate_range_stats_by_bhk(
+    df: pd.DataFrame,
+    bhk: str,
+    **kwargs,
+) -> dict:
+    """Unit sold / total sales / carpet area consumed — per rate range, per BHK."""
+    return create_rate_range_stats(df, "bhk", bhk, **kwargs)

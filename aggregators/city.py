@@ -1,12 +1,11 @@
-
 """
-aggregators/project.py
-======================
-Project-wise aggregation pipeline.
-Now flexible for:
-- Project
-- Project × Year (YoY)
-- Project × Year × Quarter (QoQ)
+aggregators/city.py
+=======================
+city-wise aggregation pipeline.
+Flexible for:
+- city
+- city × Year (YoY)
+- city × Year × Quarter (QoQ)
 """
 
 import pandas as pd
@@ -17,7 +16,7 @@ from aggregators.base import (
     apply_and_merge,
     process_price_ranges,
     process_rate_ranges,
-    process_age_ranges,           # ← new
+    process_age_ranges,
     get_project_type,
 )
 
@@ -25,8 +24,8 @@ from stats.rate import (
     most_prevailing_rate_on_ca,
     create_rate_ranges,
     floor_wise_wrapper,
-    create_rate_range_stats_by_property_type,   # ← new
-    create_rate_range_stats_by_bhk,             # ← new
+    create_rate_range_stats_by_property_type,
+    create_rate_range_stats_by_bhk,
 )
 
 from stats.area import (
@@ -37,7 +36,7 @@ from stats.area import (
     create_area_ranges_unit_sold,
     create_area_ranges_unit_sales,
     create_area_ranges_unit_avg_sales,
-    create_area_ranges_unit_carpet_area_consumed
+    create_area_ranges_unit_carpet_area_consumed,
 )
 
 from stats.price import (
@@ -47,7 +46,7 @@ from stats.price import (
 
 from stats.buyer import get_project_pincode_stats
 
-from stats.age import (           # ← new
+from stats.age import (
     create_age_range_stats_by_property_type,
     create_age_range_stats_by_bhk,
 )
@@ -57,23 +56,30 @@ from stats.age import (           # ← new
 # FLEXIBLE AGGREGATION ENGINE
 # ============================================================
 
-def build_project_aggregation(
+def build_city_aggregation(
     dataframe: pd.DataFrame,
     group_cols: list,
     base_col: str,
-    prevailing_percentile: int = 90,
-    prevailing_band: float = 0.05,
-    
+    prevailing_percentile: int = 80,
+    prevailing_band: float = 0.10,
+    rate_min: float = 2000,
+    rate_max: float = 40000,
+    price_min: float = 5000000,
+    price_max: float = 20000000,
+    price_step: int = 200000,
+    area_min: float = 200,
+    area_max: float = 6200,
+    area_interval: int = 200,
 ) -> pd.DataFrame:
     """
-    Generic aggregation engine.
+    city-wise aggregation engine.
+    All range-based stats use fixed bin strategy with user-supplied bounds.
     """
 
-    # 🔹 Dynamic grouping
     PT_GROUPS  = group_cols + ["property_type"]
     BHK_GROUPS = group_cols + ["bhk"]
 
-    m = build_masks(dataframe, base_col="project_name")
+    m = build_masks(dataframe, base_col="city")
 
     print("=== Analysis Masks Summary ===")
     print(f"Base (all transactions)  : {m['base'].sum()}")
@@ -81,34 +87,30 @@ def build_project_aggregation(
     print(f"Valid area               : {(m['base'] & m['valid_area']).sum()}")
     print(f"Valid rate               : {(m['base'] & m['valid_rate']).sum()}")
 
-    # ── Convenience slices ───────────────────────────────────
-    base_df         = dataframe[m["base"]]
-    rate_mask       = m["base"] & m["valid_rate"]
-    bhk_mask        = m["bhk_base"]
-    bhk_rate_mask   = bhk_mask & m["valid_rate"]
+    base_df       = dataframe[m["base"]]
+    rate_mask     = m["base"] & m["valid_rate"]
+    bhk_mask      = m["bhk_base"]
+    bhk_rate_mask = bhk_mask & m["valid_rate"]
 
     # ========================================================
     # BASE AGGREGATION
     # ========================================================
 
-    project_wise_summary = (
+    city_wise_summary = (
         base_df
         .groupby(group_cols)
         .agg(
-            igr_village                         =("igr_rera_village_mapped", "first"),
-            igr_village_list                    =('igr_village', lambda x:list(x.unique())),
-            city                                =("city",                    "first"),
-            total_sales                         =("agreement_price",         "sum"),
-            total_carpet_area_consumed_igr      =("net_carpet_area_sqmt",    "sum"),
-            total_transactions                  =("document_no",             "count"),
-            max_floor                           =("floor_no",                "max"),
-            recent_transaction_date             =("transaction_date",        "max"),
-            project_type                        =("project_type",            get_project_type),
+            total_sales                    =("agreement_price",    "sum"),
+            total_carpet_area_consumed_igr =("net_carpet_area_sqmt","sum"),
+            total_transactions             =("document_no",        "count"),
+            max_floor                      =("floor_no",           "max"),
+            recent_transaction_date        =("transaction_date",   "max"),
+            project_type                   =("project_type",       get_project_type),
         )
         .reset_index()
     )
 
-    print(f"\nAggregated rows: {len(project_wise_summary)}")
+    print(f"\nAggregated rows: {len(city_wise_summary)}")
 
     # ========================================================
     # PROPERTY TYPE & BHK PIVOTS
@@ -116,20 +118,19 @@ def build_project_aggregation(
 
     pivots = [
         # Property-type
-        (dataframe[m["base"]],                    PT_GROUPS,  "document_no",         "count", "_sold_igr"),
-        (dataframe[m["base"]],                    PT_GROUPS,  "agreement_price",     "sum",   "_total_agreement_price"),
-        (dataframe[m["base"] & m["valid_price"]], PT_GROUPS,  "agreement_price",     "mean",  "_avg_agreement_price"),
-        (dataframe[m["base"]],                    PT_GROUPS,  "net_carpet_area_sqmt","sum",   "_carpet_area_consumed_in_sqmtr_igr"),
-
+        (dataframe[m["base"]],                    PT_GROUPS,  "document_no",          "count", "_sold_igr"),
+        (dataframe[m["base"]],                    PT_GROUPS,  "agreement_price",      "sum",   "_total_agreement_price"),
+        (dataframe[m["base"] & m["valid_price"]], PT_GROUPS,  "agreement_price",      "mean",  "_avg_agreement_price"),
+        (dataframe[m["base"]],                    PT_GROUPS,  "net_carpet_area_sqmt", "sum",   "_carpet_area_consumed_in_sqmtr_igr"),
         # BHK
-        (dataframe[bhk_mask],                    BHK_GROUPS, "document_no",         "count", "_sold_igr"),
-        (dataframe[bhk_mask],                    BHK_GROUPS, "agreement_price",     "sum",   "_total_agreement_price"),
-        (dataframe[bhk_mask & m["valid_price"]], BHK_GROUPS, "agreement_price",     "mean",  "_avg_agreement_price"),
-        (dataframe[bhk_mask],                    BHK_GROUPS, "net_carpet_area_sqmt","sum",   "_carpet_area_consumed_in_sqmtr_igr"),
+        (dataframe[bhk_mask],                     BHK_GROUPS, "document_no",          "count", "_sold_igr"),
+        (dataframe[bhk_mask],                     BHK_GROUPS, "agreement_price",      "sum",   "_total_agreement_price"),
+        (dataframe[bhk_mask & m["valid_price"]],  BHK_GROUPS, "agreement_price",      "mean",  "_avg_agreement_price"),
+        (dataframe[bhk_mask],                     BHK_GROUPS, "net_carpet_area_sqmt", "sum",   "_carpet_area_consumed_in_sqmtr_igr"),
     ]
 
     for src, gcols, vcol, agg, sfx in pivots:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             create_pivot(src, gcols, vcol, agg, sfx),
             on=group_cols,
             how="left",
@@ -156,10 +157,8 @@ def build_project_aggregation(
             .pivot(index=group_cols, columns="property_type")
         )
         proj_rate_nca.columns = [f"{c[1]}_{c[0]}" for c in proj_rate_nca.columns]
-        project_wise_summary = project_wise_summary.merge(
-            proj_rate_nca.reset_index(),
-            on=group_cols,
-            how="left",
+        city_wise_summary = city_wise_summary.merge(
+            proj_rate_nca.reset_index(), on=group_cols, how="left",
         )
 
         # Saleable Area Rate
@@ -176,51 +175,46 @@ def build_project_aggregation(
             .pivot(index=group_cols, columns="property_type")
         )
         proj_rate_sa.columns = [f"{c[1]}_{c[0]}" for c in proj_rate_sa.columns]
-        project_wise_summary = project_wise_summary.merge(
-            proj_rate_sa.reset_index(),
-            on=group_cols,
-            how="left",
+        city_wise_summary = city_wise_summary.merge(
+            proj_rate_sa.reset_index(), on=group_cols, how="left",
         )
 
         # Floor-wise 90P Rate
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(rate_df, PT_GROUPS, floor_wise_wrapper, "_floor_wise_90p_rate"),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
-        # Prevailing rate — now configurable
-        project_wise_summary = project_wise_summary.merge(
+        # Prevailing rate
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(
                 rate_df,
                 PT_GROUPS,
                 lambda g, seg: most_prevailing_rate_on_ca(
-                    g,
-                    seg,
+                    g, seg,
                     percentile=prevailing_percentile,
                     band_pct=prevailing_band,
                 ),
                 "_most_prevailing_rate_range",
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
-        # Rate range distribution (unchanged)
-        project_wise_summary = project_wise_summary.merge(
+        # Unit sold in rate range (count only)
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(
                 rate_df,
                 PT_GROUPS,
                 lambda g, seg: create_rate_ranges(
-                    g,
-                    seg,
-                    bin_strategy="mean",
-                    interval=1000,   # or your desired interval
+                    g, seg,
+                    bin_strategy="fixed",
+                    interval=1000,
+                    min_val=rate_min,
+                    max_val=rate_max,
                 ),
                 "_total_unit_sold_in_rate_range",
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     # ========================================================
@@ -242,10 +236,8 @@ def build_project_aggregation(
             .pivot(index=group_cols, columns="bhk")
         )
         bhk_rate.columns = [f"{c[1]} - {c[0]}" for c in bhk_rate.columns]
-        project_wise_summary = project_wise_summary.merge(
-            bhk_rate.reset_index(),
-            on=group_cols,
-            how="left",
+        city_wise_summary = city_wise_summary.merge(
+            bhk_rate.reset_index(), on=group_cols, how="left",
         )
 
     # ========================================================
@@ -256,50 +248,61 @@ def build_project_aggregation(
     area_price_mask = m["base"] & m["valid_price"] & m["valid_area"]
 
     if area_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        # Unit sold in area range
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(
                 dataframe[area_mask],
                 PT_GROUPS,
                 lambda g, seg: create_area_ranges(
-                    g,
-                    seg,
-                    bin_strategy="mean",
-                    interval=200,
+                    g, seg,
+                    bin_strategy="fixed",
+                    interval=area_interval,
+                    min_val=area_min,
+                    max_val=area_max,
                 ),
                 "_total_unit_sold_in_area_range",
-            )
+            ),
+            on=group_cols, how="left",
+        )
+
+        # Carpet area consumed in area range
+        city_wise_summary = city_wise_summary.merge(
+            apply_and_merge(
+                dataframe[area_mask],
+                PT_GROUPS,
+                lambda g, seg: create_area_ranges_area(
+                    g, seg,
+                    bin_strategy="fixed",
+                    interval=area_interval,
+                    min_val=area_min,
+                    max_val=area_max,
+                ),
+                "_total_carpet_area_consumed_in_area_range_sqft",
+            ),
+            on=group_cols, how="left",
         )
 
     if area_price_mask.sum() > 0:
         for func, sfx in [
-        (create_area_ranges_sales,     "_total_agreement_price_in_area_range"),
-        (create_area_ranges_avg_sales, "_avg_agreement_price_in_area_range"),]:
-            project_wise_summary = project_wise_summary.merge(
-            apply_and_merge(
-                dataframe[area_price_mask],
-                PT_GROUPS,
-                lambda g, seg, f=func: f(
-                    g,
-                    seg,
-                    bin_strategy="mean",
-                    interval=200,
+            (create_area_ranges_sales,     "_total_agreement_price_in_area_range"),
+            (create_area_ranges_avg_sales, "_avg_agreement_price_in_area_range"),
+        ]:
+            city_wise_summary = city_wise_summary.merge(
+                apply_and_merge(
+                    dataframe[area_price_mask],
+                    PT_GROUPS,
+                    lambda g, seg, f=func: f(
+                        g, seg,
+                        bin_strategy="fixed",
+                        interval=area_interval,
+                        min_val=area_min,
+                        max_val=area_max,
+                    ),
+                    sfx,
                 ),
-                sfx,
-            ),
-            on=group_cols,
-            how="left",
-        )
-            
-    project_wise_summary = project_wise_summary.merge(
-            apply_and_merge(
-                dataframe[area_mask],
-                PT_GROUPS,
-                create_area_ranges_area,
-                "_total_carpet_area_consumed_in_area_range_sqft", 
-            ),
-            on=group_cols,
-            how="left",
-        )
+                on=group_cols, how="left",
+            )
+
     # ========================================================
     # AREA RANGES — BHK
     # ========================================================
@@ -307,34 +310,38 @@ def build_project_aggregation(
     bhk_carpet_mask = bhk_mask & m["valid_carpet"]
 
     if bhk_carpet_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        # Unit sold in area range
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(
-        dataframe[bhk_carpet_mask],
-        BHK_GROUPS,
-        lambda g, seg: create_area_ranges_unit_sold(
-            g,
-            seg,
-            bin_strategy="mean",
-            interval=200,
-        ),
-        "_total_unit_sold_in_area_range",),
-        on=group_cols,
-        how="left",
+                dataframe[bhk_carpet_mask],
+                BHK_GROUPS,
+                lambda g, seg: create_area_ranges_unit_sold(
+                    g, seg,
+                    bin_strategy="fixed",
+                    interval=area_interval,
+                    min_val=area_min,
+                    max_val=area_max,
+                ),
+                "_total_unit_sold_in_area_range",
+            ),
+            on=group_cols, how="left",
         )
 
-        project_wise_summary = project_wise_summary.merge(
+        # Carpet area consumed in area range
+        city_wise_summary = city_wise_summary.merge(
             apply_and_merge(
-        dataframe[bhk_carpet_mask],
-        BHK_GROUPS,
-        lambda g, seg: create_area_ranges_unit_carpet_area_consumed(
-            g,
-            seg,
-            bin_strategy="mean",
-            interval=200,
-        ),
-        "_total_carpet_area_consumed_in_area_range_sqft",),
-        on=group_cols,
-        how="left",
+                dataframe[bhk_carpet_mask],
+                BHK_GROUPS,
+                lambda g, seg: create_area_ranges_unit_carpet_area_consumed(
+                    g, seg,
+                    bin_strategy="fixed",
+                    interval=area_interval,
+                    min_val=area_min,
+                    max_val=area_max,
+                ),
+                "_total_carpet_area_consumed_in_area_range_sqft",
+            ),
+            on=group_cols, how="left",
         )
 
         bhk_carpet_price_mask = bhk_carpet_mask & m["valid_price"]
@@ -344,20 +351,20 @@ def build_project_aggregation(
                 (create_area_ranges_unit_sales,     "_total_agreement_price_in_area_range"),
                 (create_area_ranges_unit_avg_sales, "_avg_agreement_price_in_area_range"),
             ]:
-                project_wise_summary = project_wise_summary.merge(
+                city_wise_summary = city_wise_summary.merge(
                     apply_and_merge(
                         dataframe[bhk_carpet_price_mask],
                         BHK_GROUPS,
                         lambda g, seg, f=func: f(
-                            g,
-                            seg,
-                            bin_strategy="mean",
-                            interval=200,
+                            g, seg,
+                            bin_strategy="fixed",
+                            interval=area_interval,
+                            min_val=area_min,
+                            max_val=area_max,
                         ),
                         sfx,
                     ),
-                    on=group_cols,
-                    how="left",
+                    on=group_cols, how="left",
                 )
 
     # ========================================================
@@ -366,7 +373,7 @@ def build_project_aggregation(
 
     if bhk_carpet_mask.sum() > 0:
         avg_carpet = (
-            dataframe
+            dataframe[bhk_carpet_mask]
             .groupby(BHK_GROUPS)["carpet_sqft"]
             .mean()
             .round(2)
@@ -374,182 +381,184 @@ def build_project_aggregation(
             .add_suffix("_avg_carpet_area_in_sqft")
             .reset_index()
         )
-        project_wise_summary = project_wise_summary.merge(
-            avg_carpet,
-            on=group_cols,
-            how="left",
+        city_wise_summary = city_wise_summary.merge(
+            avg_carpet, on=group_cols, how="left",
         )
 
     # ========================================================
     # PRICE RANGES
     # ========================================================
 
-    # ========================================================
-# PRICE RANGES
-# ========================================================
-
     price_mask = m["base"] & m["valid_price"]
 
     if price_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             process_price_ranges(
                 dataframe[price_mask],
                 PT_GROUPS,
                 lambda g, seg: calculate_property_type_price_range(
-                    g,
-                    seg,
-                    bound_strategy="mean",
-                    step=200000,
+                    g, seg,
+                    bound_strategy="fixed",
+                    min_val=price_min,
+                    max_val=price_max,
+                    step=price_step,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     if (bhk_mask & m["valid_price"]).sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             process_price_ranges(
                 dataframe[bhk_mask & m["valid_price"]],
                 BHK_GROUPS,
                 lambda g, seg: calculate_bhk_price_range(
-                    g,
-                    seg,
-                    bound_strategy="mean",
-                    step=200000
+                    g, seg,
+                    bound_strategy="fixed",
+                    min_val=price_min,
+                    max_val=price_max,
+                    step=price_step,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     # ========================================================
-    # RATE RANGES — PROPERTY TYPE
+    # RATE RANGES — PROPERTY TYPE (sold / total price / carpet)
     # ========================================================
 
     if rate_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             process_rate_ranges(
                 dataframe[rate_mask],
                 PT_GROUPS,
                 lambda g, seg: create_rate_range_stats_by_property_type(
-                    g,
-                    seg,
-                    bin_strategy="mean",
+                    g, seg,
+                    bin_strategy="fixed",
                     interval=1000,
+                    min_val=rate_min,
+                    max_val=rate_max,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     # ========================================================
-    # RATE RANGES — BHK
+    # RATE RANGES — BHK (sold / total price / carpet)
     # ========================================================
 
     if bhk_rate_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             process_rate_ranges(
                 dataframe[bhk_rate_mask],
                 BHK_GROUPS,
                 lambda g, seg: create_rate_range_stats_by_bhk(
-                    g,
-                    seg,
-                    bin_strategy="mean",
+                    g, seg,
+                    bin_strategy="fixed",
                     interval=1000,
+                    min_val=rate_min,
+                    max_val=rate_max,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
-
 
     # ========================================================
     # PINCODE STATS
     # ========================================================
 
     if price_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             get_project_pincode_stats(
                 dataframe[price_mask],
                 group_cols=group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     # ========================================================
     # AGE RANGES — PROPERTY TYPE
     # ========================================================
 
-    age_mask = m["base"]   # age is derived in preprocessing, no extra mask needed
+    age_mask = m["base"]
 
     if age_mask.sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+        city_wise_summary = city_wise_summary.merge(
             process_age_ranges(
                 dataframe[age_mask],
                 PT_GROUPS,
                 lambda g, seg: create_age_range_stats_by_property_type(
-                    g,
-                    seg,
+                    g, seg,
                     min_age=25,
                     max_age=55,
                     interval=5,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
 
     # ========================================================
     # AGE RANGES — BHK
     # ========================================================
 
-    if (bhk_mask).sum() > 0:
-        project_wise_summary = project_wise_summary.merge(
+    if bhk_mask.sum() > 0:
+        city_wise_summary = city_wise_summary.merge(
             process_age_ranges(
                 dataframe[bhk_mask],
                 BHK_GROUPS,
                 lambda g, seg: create_age_range_stats_by_bhk(
-                    g,
-                    seg,
+                    g, seg,
                     min_age=25,
                     max_age=55,
                     interval=5,
                 ),
                 group_cols,
             ),
-            on=group_cols,
-            how="left",
+            on=group_cols, how="left",
         )
+
     # ---- Final cleanup ----
-    project_wise_summary = project_wise_summary.loc[:, ~project_wise_summary.columns.duplicated()]
-    project_wise_summary.columns = project_wise_summary.columns.str.lower()
+    city_wise_summary = city_wise_summary.loc[
+        :, ~city_wise_summary.columns.duplicated()
+    ]
+    city_wise_summary.columns = city_wise_summary.columns.str.lower()
 
     print(f"\n=== Final Output ===")
-    print(f"Shape: {project_wise_summary.shape}")
+    print(f"Shape: {city_wise_summary.shape}")
 
-    return project_wise_summary
+    return city_wise_summary
 
 
 # ============================================================
 # WRAPPERS
 # ============================================================
 
-def build_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    return build_project_aggregation(df, ["index", "project_name"],'project_name')
+def build_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+    return build_city_aggregation(
+        df,
+        ["city"],
+        "city",
+    )
 
 
-def build_yoy_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["index", "project_name", "year"],'project_name')
-    base = base.sort_values(["index", "project_name", "year"])
-    return base
+def build_yoy_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+    base = build_city_aggregation(
+        df,
+        ["city", "year"],
+        "city",
+    )
+    return base.sort_values(["city", "year"])
 
-def build_qoq_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["index", "project_name", "quarter"],'project_name')
-    base = base.sort_values(["index", "project_name", "quarter"])
-    return base
+
+def build_qoq_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+    base = build_city_aggregation(
+        df,
+        ["city", "quarter"],
+        "city",
+    )
+    return base.sort_values(["city", "quarter"])
