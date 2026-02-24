@@ -57,7 +57,7 @@ Two Excel files are required. Update the paths in `run.py` before running:
 ## How to Run
 
 ```bash
-cd "E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes"
+cd ".\ADB1 Codes"
 python run.py
 ```
 
@@ -89,7 +89,6 @@ Done.
 
 Raw data is filtered and cleaned:
 
-- Only rows where `manual_processed == 'Yes'` are kept
 - Floor numbers are normalised using `FLOOR_MAP` (e.g. "Ground" → 0, "Stilt" → 0)
 - Derived columns added:
 
@@ -176,6 +175,7 @@ The `stats/` modules are completely reusable. To add a new aggregation level:
 2. Change the group key constants:
 ```python
 # project-wise
+- Only rows where `manual_processed == 'Yes'` are kept
 PROJ_COLS = ["index", "project_name"]
 
 # location-wise
