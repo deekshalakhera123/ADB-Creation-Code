@@ -288,7 +288,7 @@ def create_area_ranges_unit_sold(
 ):
     return create_area_range_stats(
         df,
-        "bhk",
+        "bhk_br",
         bhk,
         agg="count",
         **kwargs,
@@ -302,7 +302,7 @@ def create_area_ranges_unit_sales(
 ):
     return create_area_range_stats(
         df,
-        "bhk",
+        "bhk_br",
         bhk,
         agg="sum",
         value_col="agreement_price",
@@ -317,7 +317,7 @@ def create_area_ranges_unit_avg_sales(
 ):
     return create_area_range_stats(
         df,
-        "bhk",
+        "bhk_br",
         bhk,
         agg="mean",
         value_col="agreement_price",
@@ -331,7 +331,7 @@ def create_area_ranges_unit_carpet_area_consumed(
 ):
     return create_area_range_stats(
         df,
-        "bhk",
+        "bhk_br",
         bhk,
         agg="sum",
         value_col="carpet_sqft",

@@ -11,6 +11,8 @@ Rate-related statistics:
 import numpy as np
 import pandas as pd
 
+from config import RATE_STEP
+
 
 def percentile_rate(
     df: pd.DataFrame,
@@ -64,7 +66,7 @@ def most_prevailing_rate_on_ca(
     return f"{lower}-{upper}"
 
 
-def _build_rate_bins(mean: int, interval: int = 1000):
+def _build_rate_bins(mean: int, interval: int = RATE_STEP):
     """7 rate-range buckets centred on mean, compatible with pd.cut."""
     pts    = [mean + o * interval for o in range(-3, 4)]
     edges  = [-np.inf] + pts + [np.inf]
@@ -79,7 +81,7 @@ def _build_rate_bins(mean: int, interval: int = 1000):
 def _build_rate_bins_generalize(
     min_val: float,
     max_val: float,
-    interval: int = 1000,
+    interval: int = RATE_STEP,
 ):
     """
     Build bins strictly between user-provided min and max.
@@ -106,7 +108,7 @@ def create_rate_ranges(
     df: pd.DataFrame,
     property_type: str,
     bin_strategy: str = "mean",
-    interval: int = 1000,
+    interval: int = RATE_STEP,
     min_val: float = None,
     max_val: float = None,
 ) -> dict:
@@ -199,7 +201,7 @@ def _summarise_rate_ranges(df: pd.DataFrame) -> dict:
         .agg(
             unit_sold                  =("agreement_price",  "size"),
             total_sales                =("agreement_price",  "sum"),
-            carpet_area_consumed_sqft  =("carpet_sqft",      "sum"),
+            ca_consumed_sqft  =         ("carpet_sqft",      "sum"),
         )
         .reset_index()
     )
@@ -207,7 +209,7 @@ def _summarise_rate_ranges(df: pd.DataFrame) -> dict:
     return {
         "unit_sold":                     idx["unit_sold"].to_dict(),
         "total_sales":                   idx["total_sales"].to_dict(),
-        "carpet_area_consumed_in_sqft":  idx["carpet_area_consumed_sqft"].to_dict(),
+        "ca_consumed_sqft":              idx["ca_consumed_sqft"].to_dict(),
     }
 
 
@@ -216,7 +218,7 @@ def create_rate_range_stats(
     filter_col: str,
     filter_val,
     bin_strategy: str = "mean",
-    interval: int = 1000,
+    interval: int = RATE_STEP,
     min_val: float = None,
     max_val: float = None,
 ) -> dict:
@@ -287,4 +289,4 @@ def create_rate_range_stats_by_bhk(
     **kwargs,
 ) -> dict:
     """Unit sold / total sales / carpet area consumed — per rate range, per BHK."""
-    return create_rate_range_stats(df, "bhk", bhk, **kwargs)
+    return create_rate_range_stats(df, "bhk_br", bhk, **kwargs)

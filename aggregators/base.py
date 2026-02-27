@@ -26,7 +26,7 @@ def build_masks(dataframe: pd.DataFrame, base_col: str = "project_name") -> dict
     valid_area_mask   = dataframe["net_carpet_area_sqmt"] > 0
     valid_rate_mask   = valid_price_mask & valid_area_mask
     valid_carpet_mask = dataframe["carpet_sqft"] > 0
-    non_bhk_mask      = ~dataframe["bhk"].isin(NON_BHK_VALUES)
+    non_bhk_mask      = ~dataframe["bhk_br"].isin(NON_BHK_VALUES)
     bhk_base_mask     = base_mask & non_bhk_mask
 
     return {

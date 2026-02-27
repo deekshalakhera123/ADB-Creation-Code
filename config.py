@@ -48,5 +48,13 @@ PRICE_STEP = 2_000_000  # 20 Lakhs
 AREA_STEP = 200
 RATE_STEP = 1000
 
+
+# ── MIN AND MAX RANGES ──────────────────────────────────────────────────────────── 
+MIN_RATE = 2000
+MAX_RATE = 40000
+MIN_AREA = 200
+MAX_AREA = 6200
+MIN_PRICE = 500000
+MAX_PRICE = 20000000
 # ── BHK exclusions ────────────────────────────────────────────────────────────
 NON_BHK_VALUES = ["Shop", "Office", "Others"]

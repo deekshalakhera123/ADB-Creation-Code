@@ -81,7 +81,7 @@ def _summarise_age_ranges(df: pd.DataFrame) -> dict:
     return {
         "unit_sold":                    idx["unit_sold"].to_dict(),
         "total_agreement_price":        idx["total_agreement_price"].to_dict(),
-        "carpet_area_consumed_in_sqft": idx["carpet_area_consumed_sqft"].to_dict(),
+        "ca_consumed_sqft":             idx["carpet_area_consumed_sqft"].to_dict(),
     }
 # # for percentage
 
@@ -116,7 +116,7 @@ def _summarise_age_ranges(df: pd.DataFrame) -> dict:
 #     return {
 #         "unit_sold_pct":                    idx["unit_sold_pct"].to_dict(),
 #         "total_agreement_price_pct":        idx["total_agreement_price_pct"].to_dict(),
-#         "carpet_area_consumed_in_sqft_pct": idx["carpet_area_consumed_sqft_pct"].to_dict(),
+#         "ca_consumed_sqft_pct": idx["carpet_area_consumed_sqft_pct"].to_dict(),
 #     }
 
 # ============================================================
@@ -147,7 +147,7 @@ def create_age_range_stats(
     {
         'unit_sold':                    {'<25': 10, '25-30': 34, ...},
         'total_agreement_price':        {'<25': 5000000, ...},
-        'carpet_area_consumed_in_sqft': {'<25': 1200.5, ...},
+        'ca_consumed_sqft': {'<25': 1200.5, ...},
     }
     """
     if df.empty:
@@ -214,4 +214,4 @@ def create_age_range_stats_by_bhk(
     Age-range stats (sold / total price / carpet area) 
     for a given BHK type.
     """
-    return create_age_range_stats(df, "bhk", bhk, **kwargs)
+    return create_age_range_stats(df, "bhk_br", bhk, **kwargs)

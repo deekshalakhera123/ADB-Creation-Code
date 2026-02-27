@@ -50,7 +50,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     Filter, normalise and derive all required columns.
     Returns a clean copy ready for analysis.
     """
-    df = df[df["manual_processed"] == "Yes"].copy()
+    
     df.columns = df.columns.str.lower()
 
     # Floor number normalisation
@@ -62,8 +62,16 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Derived area & rate columns
     df["carpet_sqft"]    = df["net_carpet_area_sqmt"] * 10.764
     # --------TAG
-    df["agreement_price"] = df["agreement_price"].astype(float)
-    df["rate_on_net_ca"] = df["agreement_price"] / df["carpet_sqft"]
+    mask = df['property_category'] == 'Sale'
+    df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
+    df.loc[mask, "carpet_sqft"] = pd.to_numeric(df.loc[mask, "carpet_sqft"], errors='coerce')
+
+    # Replace 0 with NaN to avoid division by zero
+    df["carpet_sqft"] = df["carpet_sqft"].replace(0, float('nan'))
+
+    df.loc[mask, "rate_on_net_ca"] = (
+        df.loc[mask, "agreement_price"] / df.loc[mask, "carpet_sqft"]
+    )
 
     # Saleable area + rate
     df["saleable_sqft"] = np.where(
@@ -71,7 +79,14 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
         df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
     )
-    df["rate_on_sa"] = df["agreement_price"] / df["saleable_sqft"]
+
+    # Replace 0 with NaN to avoid division by zero
+    df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
+
+    # ✅ Use mask here too — agreement_price has strings in non-Sale rows
+    df.loc[mask, "rate_on_sa"] = (
+        df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
+    )
 
     # Project-type classification
     df["project_type"] = df["property_type_raw"].apply(classify_project_type)
@@ -83,6 +98,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_bhk_mapping(rera_keywords_path: str) -> dict:
+    
     """
     Load BHK keyword mapping from RERA excel.
     Returns {raw_bhk: final_bhk} dict.
@@ -101,5 +117,13 @@ def load_bhk_mapping(rera_keywords_path: str) -> dict:
 def apply_bhk_mapping(df: pd.DataFrame, bhk_mapping: dict) -> pd.DataFrame:
     """Map raw BHK values to standardised Final BHK values."""
     df = df.copy()
-    df["bhk"] = df["bhk"].str.strip().str.title().map(bhk_mapping)
+    df["bhk_br"] = df["bhk_br"].str.strip().str.title().map(bhk_mapping)
     return df
+
+def round_dict_floats(val, decimals=2):
+    """Recursively round all float values inside a dict."""
+    if isinstance(val, dict):
+        return {k: round_dict_floats(v, decimals) for k, v in val.items()}
+    if isinstance(val, float):
+        return round(val, decimals)
+    return val

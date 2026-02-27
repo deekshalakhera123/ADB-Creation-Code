@@ -104,7 +104,7 @@ def _summarise_price_ranges(df: pd.DataFrame) -> dict:
     return {
         "unit_sold": idx["unit_sold"].to_dict(),
         "total_sales": idx["total_sales"].to_dict(),
-        "carpet_area_consumed_in_sqft": idx["carpet_area_consumed"].to_dict(),
+        "ca_consumed_sqft": idx["carpet_area_consumed"].to_dict(),
     }
 
 
@@ -187,7 +187,7 @@ def calculate_bhk_price_range(
 ) -> dict:
     return calculate_price_range_stats(
         df,
-        "bhk",
+        "bhk_br",
         bhk,
         **kwargs,
     )
