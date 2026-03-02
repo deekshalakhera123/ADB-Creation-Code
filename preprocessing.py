@@ -105,17 +105,17 @@ def load_bhk_mapping(rera_keywords_path: str) -> dict:
     """
     rera = pd.read_excel(rera_keywords_path)
     rera["BHK"]       = rera["BHK"].str.strip().str.title()
-    rera["Final BHK"] = rera["Final BHK"].str.strip().str.title()
+    rera["standard_label"] = rera["standard_label"].str.strip().str.title()
     return (
-        rera[["BHK", "Final BHK"]]
+        rera[["BHK", "standard_label"]]
         .drop_duplicates()
-        .set_index("BHK")["Final BHK"]
+        .set_index("BHK")["standard_label"]
         .to_dict()
     )
 
 
 def apply_bhk_mapping(df: pd.DataFrame, bhk_mapping: dict) -> pd.DataFrame:
-    """Map raw BHK values to standardised Final BHK values."""
+    """Map raw BHK values to standardised standard_label values."""
     df = df.copy()
     df["bhk_br"] = df["bhk_br"].str.strip().str.title().map(bhk_mapping)
     return df

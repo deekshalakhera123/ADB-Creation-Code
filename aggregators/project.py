@@ -75,7 +75,7 @@ def build_project_aggregation(
     PT_GROUPS  = group_cols + ["property_type"]
     BHK_GROUPS = group_cols + ["bhk_br"]
 
-    dataframe = dataframe[dataframe["manual_processed"] == "Yes"].copy()
+    dataframe = dataframe[(dataframe["manual_processed"] == "Yes")&(dataframe['property_category']=='Sale')].copy()
     dataframe['rate_on_net_ca']=dataframe['rate_on_net_ca'].astype(float)
     dataframe['agreement_price']=dataframe['agreement_price'].astype(float)
 

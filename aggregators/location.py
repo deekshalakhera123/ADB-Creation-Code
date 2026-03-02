@@ -56,6 +56,8 @@ from config import PRICE_STEP, AREA_STEP, RATE_STEP
 
 from config import MIN_RATE, MAX_RATE, MIN_AREA, MAX_AREA, MIN_PRICE, MAX_PRICE
 
+from config import DA_KEYWORDS
+
 from preprocessing import round_dict_floats
 # ============================================================
 # FLEXIBLE AGGREGATION ENGINE
@@ -160,6 +162,7 @@ def build_location_aggregation(
         (dataframe[bhk_mask],                     BHK_GROUPS, "agreement_price",      "sum",   "_total_agreement_price"),
         (dataframe[bhk_mask & m["valid_price"]],  BHK_GROUPS, "agreement_price",      "mean",  "_avg_agreement_price"),
         (dataframe[bhk_mask],                     BHK_GROUPS, "carpet_sqft",           "sum",   "_ca_consumed_sqft_igr"),
+        
     ]
 
     for src, gcols, vcol, agg, sfx in pivots:
