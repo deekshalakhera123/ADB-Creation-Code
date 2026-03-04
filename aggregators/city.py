@@ -18,6 +18,7 @@ from aggregators.base import (
     process_rate_ranges,
     process_age_ranges,
     get_project_type,
+    clean_empty_values
 )
 
 from stats.rate import (
@@ -102,6 +103,15 @@ def build_city_aggregation(
         ),
     ]
 
+    da_summary = (
+        dataframe[dataframe['transaction_type']=='Development Agreement']
+        .groupby(group_cols)
+        .agg(
+            no_of_da_registered        =("transaction_type",      'count'),
+        )
+        .reset_index()
+    )
+
     dataframe=dataframe[dataframe['property_category']=='Sale']
 
     dataframe['rate_on_net_ca']=dataframe['rate_on_net_ca'].astype(float)
@@ -139,6 +149,13 @@ def build_city_aggregation(
     )
 
     print(f"\nAggregated rows: {len(city_wise_summary)}")
+
+
+     # DA Summary
+    
+    city_wise_summary = city_wise_summary.merge(
+            da_summary.reset_index(), on=group_cols, how="left",
+        )
 
     # ========================================================
     # PROPERTY TYPE & BHK PIVOTS
@@ -574,6 +591,8 @@ def build_city_aggregation(
     ]
     for col in dict_cols:
         city_wise_summary[col] = city_wise_summary[col].apply(round_dict_floats)
+    
+    city_wise_summary = clean_empty_values(city_wise_summary)
 
 
     print(f"\n=== Final Output ===")

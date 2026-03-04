@@ -178,3 +178,25 @@ def get_project_type(types) -> str:
     if "Commercial" in unique:
         return "Commercial"
     return "Other"
+
+
+def clean_empty_values(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Replace cells containing 0 or empty dict {} with NaN
+    so they appear blank in Excel output.
+    """
+    def _is_empty(val):
+        if val is None:
+            return True
+        if isinstance(val, dict) and len(val) == 0:
+            return True
+        if isinstance(val, float) and val == 0.0:
+            return True
+        if isinstance(val, int) and val == 0:
+            return True
+        return False
+
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: None if _is_empty(x) else x)
+
+    return df

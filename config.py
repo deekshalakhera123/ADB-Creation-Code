@@ -35,30 +35,36 @@ RESIDENTIAL_LOADING = 1.35
 COMMERCIAL_LOADING  = 1.40
 
 # ── Property type classification ──────────────────────────────────────────────
-RESIDENTIAL_TYPES = [
-    "Flat", "Apartment", "Room", "Bunglow", "Studio", "Hall",
-    "Duplex", "Flat/Shop", "Row_House", "Penthouse", "Triplex", "Triplex Apartment",
-]
-COMMERCIAL_TYPES = [
+RESIDENTIAL_TYPES = frozenset([
+    "Flat", "Apartment", "Room", "Bunglow", "Studio", "Hall",'Unit',
+    "Duplex", "Flat/Shop", "Row_House", "Penthouse", "Triplex Apartment",
+])
+COMMERCIAL_TYPES = frozenset([
     "Shop", "Office", "Commercial Unit", "Commercial", "Commerical", "Showroom",
-]
+])
 
 # ── Price range step ──────────────────────────────────────────────────────────
 PRICE_STEP = 2_000_000  # 20 Lakhs
 AREA_STEP = 200
 RATE_STEP = 1000
-
+AGE_INTERVAL = 5
 
 # ── MIN AND MAX RANGES ──────────────────────────────────────────────────────────── 
-MIN_RATE = 2000
-MAX_RATE = 40000
-MIN_AREA = 200
-MAX_AREA = 6200
-MIN_PRICE = 500000
-MAX_PRICE = 20000000
-# ── BHK exclusions ────────────────────────────────────────────────────────────
+# ── RATE ──────────────────────────────────────────────────────────────────────────
+# MIN_RATE = 2000
+# MAX_RATE = 40000
+# # ── AREA ──────────────────────────────────────────────────────────────────────────
+# MIN_AREA = 200
+# MAX_AREA = 6200
+# # ── PRICE ─────────────────────────────────────────────────────────────────────────
+# MIN_PRICE = 500000
+# MAX_PRICE = 20000000
+# ── AGE ───────────────────────────────────────────────────────────────────────────
+AGE_MIN      = 25
+AGE_MAX      = 55
+# ── BHK exclusions ────────────────────────────────────────────────────────────────
 NON_BHK_VALUES = ["Shop", "Office", "Others"]
 
-# DA files
-
+# ── DA Keywords ───────────────────────────────────────────────────────────────────
 DA_KEYWORDS =  ['डेव्हलपमेंट अँग्रीमेंट','विकसनकरारनामा','विकसन हक्काचे तबदीलपत्र']
+

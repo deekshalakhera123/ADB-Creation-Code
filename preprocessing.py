@@ -8,6 +8,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from rapidfuzz import process as fuzz_process, fuzz
 
 from config import (
     FLOOR_MAP,
@@ -32,10 +33,10 @@ def extract_age(text: str) -> list:
         entries = re.split(r"\s*\d+\)\s*", text)[1:]
         numbers = []
         for entry in entries:
-            match = re.search(
-                r"(?:वय[:-]?\s*(\d{2})|(\d{2}))\s*(?:;|\s)*पत्ता|(\d{2})\s+प्लॉट|(\d{2})\s*-,",
-                entry,
-            )
+            _AGE_PATTERN = re.compile(
+                    r"(?:वय[:-]?\s*(\d{2})|(\d{2}))\s*(?:;|\s)*पत्ता|(\d{2})\s+प्लॉट|(\d{2})\s*-,"
+                )
+            match = _AGE_PATTERN.search(entry)
             if match:
                 num = next((int(n) for n in match.groups() if n), None)
                 if num:
@@ -45,56 +46,141 @@ def extract_age(text: str) -> list:
         return []
 
 
+# def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+#     """
+#     Filter, normalise and derive all required columns.
+#     Returns a clean copy ready for analysis.
+#     """
+    
+#     df.columns = df.columns.str.lower()
+
+#     # Floor number normalisation
+#     df["floor_no"] = df["floor_no"].replace(FLOOR_MAP).astype(float)
+
+#     # Age extraction
+#     df["age"] = df["purchaser_name"].apply(extract_age)
+
+#     # Derived area & rate columns
+#     df["carpet_sqft"]  = df["net_carpet_area_sqmt"] * 10.764
+#     # --------TAG
+#     mask = df['property_category'] == 'Sale'
+#     df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
+#     df.loc[mask, "carpet_sqft"] = pd.to_numeric(df.loc[mask, "carpet_sqft"], errors='coerce')
+
+#     # Replace 0 with NaN to avoid division by zero
+#     df["carpet_sqft"] = df["carpet_sqft"].replace(0, float('nan'))
+
+#     df.loc[mask, "rate_on_net_ca"] = (
+#         df.loc[mask, "agreement_price"] / df.loc[mask, "carpet_sqft"]
+#     )
+    
+#     # Saleable area + rate
+#     df["saleable_sqft"] = np.where(
+#         df["property_type"].isin(["Flat", "Others"]),
+#         df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
+#         df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
+#     )
+
+#     # Replace 0 with NaN to avoid division by zero
+#     df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
+
+#     # ✅ Use mask here too — agreement_price has strings in non-Sale rows
+#     df.loc[mask, "rate_on_sa"] = (
+#         df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
+#     )
+
+#     # Project-type classification
+#     if 'project_type' not in df.columns:
+
+#         df['project_type']=df['property_type_raw'].apply(classify_project_type)
+#         # project_type_mask = df["project_type"].isna()
+
+#         # df.loc[project_type_mask, "project_type"] = (
+#         #     df.loc[project_type_mask, "property_type_raw"]
+#         #     .apply(classify_project_type)
+#         # )
+
+#     # Buyer pincode as numeric
+#     df["buyer_pincode"] = pd.to_numeric(df["buyer_pincode"], errors="coerce")
+
+#     return df
+
+
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Filter, normalise and derive all required columns.
-    Returns a clean copy ready for analysis.
-    """
     
     df.columns = df.columns.str.lower()
 
-    # Floor number normalisation
-    df["floor_no"] = df["floor_no"].replace(FLOOR_MAP).astype(float)
+    # Floor number normalisation — skip if column doesn't exist
+    if "floor_no" in df.columns:
+        df["floor_no"] = df["floor_no"].replace(FLOOR_MAP).astype(float)
+    else:
+        print("  ⚠ 'floor_no' column not found — filling with NaN")
+        df["floor_no"] = np.nan
 
-    # Age extraction
-    df["age"] = df["purchaser_name"].apply(extract_age)
+    # Age extraction — skip if column doesn't exist
+    if "purchaser_name" in df.columns:
+        df["age"] = df["purchaser_name"].apply(extract_age)
+    else:
+        print("  ⚠ 'purchaser_name' column not found — filling age with empty list")
+        df["age"] = [[] for _ in range(len(df))]
 
-    # Derived area & rate columns
-    df["carpet_sqft"]    = df["net_carpet_area_sqmt"] * 10.764
-    # --------TAG
+    # Derived area & rate columns — skip if columns don't exist
+    if "net_carpet_area_sqmt" in df.columns:
+        df["carpet_sqft"] = df["net_carpet_area_sqmt"] * 10.764
+    else:
+        print("  ⚠ 'net_carpet_area_sqmt' column not found — filling with NaN")
+        df["carpet_sqft"] = np.nan
+
     mask = df['property_category'] == 'Sale'
-    df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
-    df.loc[mask, "carpet_sqft"] = pd.to_numeric(df.loc[mask, "carpet_sqft"], errors='coerce')
 
-    # Replace 0 with NaN to avoid division by zero
+    if "agreement_price" in df.columns:
+        df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
+    else:
+        print("  ⚠ 'agreement_price' column not found — filling with NaN")
+        df["agreement_price"] = np.nan
+
     df["carpet_sqft"] = df["carpet_sqft"].replace(0, float('nan'))
 
-    df.loc[mask, "rate_on_net_ca"] = (
-        df.loc[mask, "agreement_price"] / df.loc[mask, "carpet_sqft"]
-    )
+    if "agreement_price" in df.columns and "carpet_sqft" in df.columns:
+        df.loc[mask, "rate_on_net_ca"] = (
+            df.loc[mask, "agreement_price"] / df.loc[mask, "carpet_sqft"]
+        )
+    else:
+        df["rate_on_net_ca"] = np.nan
 
-    # Saleable area + rate
-    df["saleable_sqft"] = np.where(
-        df["property_type"].isin(["Flat", "Others"]),
-        df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
-        df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
-    )
-
-    # Replace 0 with NaN to avoid division by zero
-    df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
-
-    # ✅ Use mask here too — agreement_price has strings in non-Sale rows
-    df.loc[mask, "rate_on_sa"] = (
-        df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
-    )
+    # Saleable area
+    if "net_carpet_area_sqmt" in df.columns and "property_type" in df.columns:
+        df["saleable_sqft"] = np.where(
+            df["property_type"].isin(["Flat", "Others"]),
+            df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
+            df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
+        )
+        df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
+        df.loc[mask, "rate_on_sa"] = (
+            df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
+        )
+    else:
+        df["saleable_sqft"] = np.nan
+        df["rate_on_sa"]    = np.nan
 
     # Project-type classification
-    df["project_type"] = df["property_type_raw"].apply(classify_project_type)
+    if "project_type" in df.columns and "property_type_raw" in df.columns:
+        pass
+    elif "property_type_raw" in df.columns:
+        df["project_type"] = df["property_type_raw"].apply(classify_project_type)
+    else:
+        print("  ⚠ 'project_type' and 'property_type_raw' columns not found — filling with 'Other'")
+        df["project_type"] = "Other"
 
-    # Buyer pincode as numeric
-    df["buyer_pincode"] = pd.to_numeric(df["buyer_pincode"], errors="coerce")
+    # Buyer pincode
+    if "buyer_pincode" in df.columns:
+        df["buyer_pincode"] = pd.to_numeric(df["buyer_pincode"], errors="coerce")
+    else:
+        print("  ⚠ 'buyer_pincode' column not found — filling with NaN")
+        df["buyer_pincode"] = np.nan
 
     return df
+
 
 
 def load_bhk_mapping(rera_keywords_path: str) -> dict:
@@ -113,11 +199,63 @@ def load_bhk_mapping(rera_keywords_path: str) -> dict:
         .to_dict()
     )
 
-
 def apply_bhk_mapping(df: pd.DataFrame, bhk_mapping: dict) -> pd.DataFrame:
     """Map raw BHK values to standardised standard_label values."""
     df = df.copy()
     df["bhk_br"] = df["bhk_br"].str.strip().str.title().map(bhk_mapping)
+    return df
+
+def load_prop_mapping(prop_type_path: str) -> dict:
+    
+    """
+    Load Property_type keyword mapping from DB1 excel.
+    Returns {raw_bhk: final_property_type} dict.
+    """
+    df = pd.read_excel(prop_type_path)
+    df["property_type_raw"]       = df["property_type_raw"].str.strip().str.title()
+    df["property_type_refined"] = df["property_type_refined"].str.strip().str.title()
+    return (
+        df[["property_type_raw", "property_type_refined"]]
+        .drop_duplicates()
+        .set_index("property_type_raw")["property_type_refined"]
+        .to_dict()
+    )
+
+
+
+def apply_prop_mapping(df: pd.DataFrame, prop_mapping: dict) -> pd.DataFrame:
+    """
+    Map raw property types to refined labels.
+    Raises error if any unmapped values are found.
+    """
+    df = df.copy()
+
+    # Normalize column
+    df["property_type_raw"] = (
+        df["property_type_raw"]
+        .astype(str)
+        .str.strip()
+        .str.title()
+        .replace({"Nan": "Others", "": "Others", "None": "Others"})
+    )
+
+    # # fuzzy normalize before mapping check
+    # known_values = list(prop_mapping.keys())
+    # df = normalize_property_type_raw(df, known_values, threshold=80)
+
+    # Find unmapped values
+    unmapped = set(df["property_type_raw"].unique()) - set(prop_mapping.keys())
+
+    if unmapped:
+        raise ValueError(
+            f"\n❌ Unmapped property types found:\n"
+            f"{sorted(unmapped)}\n\n"
+            f"Please add them to your property type mapping file."
+        )
+
+    # Apply mapping
+    df["property_type_raw"] = df["property_type_raw"].map(prop_mapping)
+
     return df
 
 def round_dict_floats(val, decimals=2):
@@ -127,3 +265,49 @@ def round_dict_floats(val, decimals=2):
     if isinstance(val, float):
         return round(val, decimals)
     return val
+
+
+
+
+def normalize_property_type_raw(
+    df: pd.DataFrame,
+    known_values: list,
+    threshold: int = 80,        # match confidence — lower = more aggressive matching
+) -> pd.DataFrame:
+    """
+    For any property_type_raw value not in known_values,
+    attempt fuzzy match to the closest known value.
+    If confidence is below threshold, fall back to 'Others'.
+
+    Logs every substitution made so you can audit them.
+    """
+    df = df.copy()
+    unique_vals   = df["property_type_raw"].unique()
+    known_set     = set(known_values)
+    substitutions = {}   # track what got changed
+
+    for val in unique_vals:
+        if val in known_set:
+            continue   # already clean, skip
+
+        # Try fuzzy match
+        match, score, _ = fuzz_process.extractOne(
+            val,
+            known_values,
+            scorer=fuzz.token_sort_ratio,   # handles word-order differences too
+        )
+
+        if score >= threshold:
+            substitutions[val] = match
+        else:
+            substitutions[val] = "Others"   # low confidence → Others
+
+    # Apply all substitutions at once
+    if substitutions:
+        print("\n  📋 Property type normalizations applied:")
+        for original, replacement in substitutions.items():
+            count = (df["property_type_raw"] == original).sum()
+            print(f"     '{original}' → '{replacement}'  ({count} rows)")
+        df["property_type_raw"] = df["property_type_raw"].replace(substitutions)
+
+    return df

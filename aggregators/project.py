@@ -19,6 +19,7 @@ from aggregators.base import (
     process_rate_ranges,
     process_age_ranges,           # ← new
     get_project_type,
+    clean_empty_values
 )
 
 from stats.rate import (
@@ -102,7 +103,7 @@ def build_project_aggregation(
         .groupby(group_cols)
         .agg(
             location                            =("location", "first"),
-            igr_village_list                    =('igr_village', lambda x:list(x.unique())),
+            # igr_village_list                    =('igr_village', lambda x:list(x.unique())),
             project_lat                         =("project_lat",             "first"),
             project_lng                         =("project_lng",             "first"),
             city                                =("city",                    "first"),
@@ -557,6 +558,8 @@ def build_project_aggregation(
     ]
     for col in dict_cols:
         project_wise_summary[col] = project_wise_summary[col].apply(round_dict_floats)
+    
+    project_wise_summary = clean_empty_values(project_wise_summary)
 
 
     print(f"\n=== Final Output ===")

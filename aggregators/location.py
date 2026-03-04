@@ -18,6 +18,7 @@ from aggregators.base import (
     process_rate_ranges,
     process_age_ranges,
     get_project_type,
+    clean_empty_values
 )
 
 from stats.rate import (
@@ -56,7 +57,6 @@ from config import PRICE_STEP, AREA_STEP, RATE_STEP
 
 from config import MIN_RATE, MAX_RATE, MIN_AREA, MAX_AREA, MIN_PRICE, MAX_PRICE
 
-from config import DA_KEYWORDS
 
 from preprocessing import round_dict_floats
 # ============================================================
@@ -87,7 +87,7 @@ def build_location_aggregation(
     BHK_GROUPS = group_cols + ["bhk_br"]
     
 
-
+    print(dataframe['property_category'].unique())
     type_summary = [
         (
             dataframe[(dataframe['property_category'] == 'Sale')],
@@ -96,14 +96,25 @@ def build_location_aggregation(
             "count",
             "_transactions_sale"
         ),
-        (
-            dataframe,
-            group_cols+["property_category"],
-            "document_no",
-            "count",
-            "_transactions"
-        ),
+        # (
+        #     dataframe,
+        #     group_cols+["property_category"],
+        #     "document_no",
+        #     "count",
+        #     "_transactions"
+        # ),
     ]
+
+    # print('type_summary', type_summary)
+
+    da_summary = (
+        dataframe[dataframe['transaction_type']=='Development Agreement']
+        .groupby(group_cols)
+        .agg(
+            no_of_da_registered        =("transaction_type",      'count'),
+        )
+        .reset_index()
+    )
 
     dataframe=dataframe[dataframe['property_category']=='Sale']
 
@@ -145,7 +156,13 @@ def build_location_aggregation(
     )
 
     print(f"\nAggregated rows: {len(location_wise_summary)}")
+
+
+    # DA Summary
     
+    location_wise_summary = location_wise_summary.merge(
+            da_summary.reset_index(), on=group_cols, how="left",
+        )
 
     # ========================================================
     # PROPERTY TYPE & BHK PIVOTS
@@ -584,6 +601,8 @@ def build_location_aggregation(
     ]
     for col in dict_cols:
         location_wise_summary[col] = location_wise_summary[col].apply(round_dict_floats)
+    
+    location_wise_summary = clean_empty_values(location_wise_summary)
 
 
     print(f"\n=== Final Output ===")
