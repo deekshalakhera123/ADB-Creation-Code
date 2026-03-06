@@ -128,7 +128,7 @@ def load_city_files(city: str, folder: str) -> pd.DataFrame:
     print(f"  Found {len(files)} file(s) for {city}:")
 
     frames = []
-    for filepath in sorted(files):          # ← loads ALL files (removed [:2] limit)
+    for filepath in sorted(files)[:1]:          # ← loads ALL files (removed [:2] limit)
         filename = os.path.basename(filepath)
         try:
             df                = pd.read_excel(filepath)
@@ -350,19 +350,24 @@ def main():
     dataframe = apply_prop_mapping(dataframe, prop_type_mapping)
 
     # ── 4. Define pipelines ───────────────────────────────────────────────────
+    # Each entry: (label, build_fn, category, period_type, period_value)
+    #   category    : "project" | "location" | "city"
+    #   period_type : "Overall" | "YoY" | "QoQ"
+    #   period_value: human-readable period label written into the Period column
     pipeline_defs = [
-        ("Project",      build_project_wise,      "output_project_wise.xlsx"),
-        ("Project YoY",  build_yoy_project_wise,  "output_yoy_project_wise.xlsx"),
-        ("Project QoQ",  build_qoq_project_wise,  "output_qoq_project_wise.xlsx"),
-        ("Location",     build_location_wise,     "output_location_wise.xlsx"),
-        ("Location YoY", build_yoy_location_wise, "output_yoy_location_wise.xlsx"),
-        ("Location QoQ", build_qoq_location_wise, "output_qoq_location_wise.xlsx"),
-        ("City",         build_city_wise,         "output_city_wise.xlsx"),
-        ("City YoY",     build_yoy_city_wise,     "output_yoy_city_wise.xlsx"),
-        ("City QoQ",     build_qoq_city_wise,     "output_qoq_city_wise.xlsx"),
+        ("Project",      build_project_wise,      "project",  "Overall", "Overall"),
+        ("Project YoY",  build_yoy_project_wise,  "project",  "YoY",     "YoY"),
+        ("Project QoQ",  build_qoq_project_wise,  "project",  "QoQ",     "QoQ"),
+        ("Location",     build_location_wise,     "location", "Overall", "Overall"),
+        ("Location YoY", build_yoy_location_wise, "location", "YoY",     "YoY"),
+        ("Location QoQ", build_qoq_location_wise, "location", "QoQ",     "QoQ"),
+        ("City",         build_city_wise,         "city",     "Overall", "Overall"),
+        ("City YoY",     build_yoy_city_wise,     "city",     "YoY",     "YoY"),
+        ("City QoQ",     build_qoq_city_wise,     "city",     "QoQ",     "QoQ"),
     ]
 
-    pipeline_results = {filename: [] for _, _, filename in pipeline_defs}
+    # Accumulate in-memory: {category: [tagged DataFrames]}
+    pipeline_results = {"project": [], "location": [], "city": []}
 
     # ── 5. Run each city separately through all pipelines ────────────────────
     #
@@ -397,7 +402,7 @@ def main():
             print(f"  ⚠ No rows after preprocessing — skipping {city}")
             continue
 
-        for label, build_fn, filename in pipeline_defs:
+        for label, build_fn, category, period_type, period_value in pipeline_defs:
             print(f"\n  Running {label}...")
             t = time.time()
             try:
@@ -407,31 +412,39 @@ def main():
                     print(f"  ⚠ Empty result — skipped")
                     continue
 
-                pipeline_results[filename].append(result)
+                # Tag with Type + Period before accumulating
+                result.insert(0, "Period", period_value)
+                result.insert(0, "Type",   period_type)
+
+                pipeline_results[category].append(result)
                 print(f"  → {len(result):,} rows × {result.shape[1]} cols ({time.time()-t:.1f}s)")
 
             except Exception as e:
                 print(f"  ✗ FAILED [{label}]: {e}")
 
-    # ── 6. Concat → reorder BR cols → save ───────────────────────────────────
+    # ── 6. Concat → reorder BR cols → save one merged file per category ───────
     print(f"\n{'='*50}")
-    print("  Saving output files...")
+    print("  Saving merged output files...")
     print(f"{'='*50}\n")
 
-    for _, _, filename in pipeline_defs:
-        frames = pipeline_results[filename]
+    output_filenames = {
+        "project":  "project_merged.xlsx",
+        "location": "location_merged.xlsx",
+        "city":     "city_merged.xlsx",
+    }
 
+    for category, frames in pipeline_results.items():
         if not frames:
-            print(f"  ✗ No data for {filename} — skipped")
+            print(f"  ✗ No data for {category} — skipped")
             continue
 
-        # Stack city results as rows — gaps filled with NaN automatically
+        # Stack all city × period results — gaps filled with NaN automatically
         final = pd.concat(frames, ignore_index=True)
 
         # Reorder only BR columns numerically — all other cols stay as-is
         final = reorder_br_columns(final)
 
-        out_path = os.path.join(OUTPUT_DIR, filename)
+        out_path = os.path.join(OUTPUT_DIR, output_filenames[category])
         save_result(final, out_path)
 
     print(f"\nAll done in {time.time()-total_start:.1f}s")
@@ -439,6 +452,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
