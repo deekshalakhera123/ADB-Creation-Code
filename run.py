@@ -46,7 +46,7 @@ OUTPUT_DIR         = r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 C
 # Columns that must exist in every city's data
 EXPECTED_COLUMNS = [
     "floor_no", "purchaser_name", "net_carpet_area_sqmt",
-    "agreement_price", "property_category_id", "property_type",
+    "agreement_price", "property_category", "property_type",
     "property_type_raw", "project_type", "buyer_pincode",
     "transaction_date", "document_no",
 ]
@@ -356,6 +356,7 @@ def main():
         print(f"ERROR: Property type file not found -> {PROP_TYPE_PATH}")
         sys.exit(1)
 
+    
     dataframe = apply_bhk_mapping(dataframe, bhk_mapping)
     dataframe = apply_prop_mapping(dataframe, prop_type_mapping)
 

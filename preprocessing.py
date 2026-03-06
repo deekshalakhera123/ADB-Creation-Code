@@ -71,7 +71,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         print("  ⚠ 'net_carpet_area_sqmt' column not found — filling with NaN")
         df["carpet_sqft"] = np.nan
 
-    mask = df['property_category_id'] == 'Sale'
+    mask = df['property_category'] == 'Sale'
 
     if "agreement_price" in df.columns:
         df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
@@ -113,14 +113,15 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         df["saleable_sqft"] = np.nan
         df["rate_on_sa"]    = np.nan
 
-    # Project-type classification
-    if "project_type" in df.columns and "property_type_raw" in df.columns:
-        pass
-    elif "property_type_raw" in df.columns:
-        df["project_type"] = df["property_type_raw"].apply(classify_project_type)
+    if "property_type_raw" in df.columns:
+        # Fill missing/blank project_type using property_type_raw
+        mask = df["project_type"].isna() | (df["project_type"].astype(str).str.strip() == "")
+        df.loc[mask, "project_type"] = df.loc[mask, "property_type_raw"].apply(classify_project_type)
     else:
-        print("  ⚠ 'project_type' and 'property_type_raw' columns not found — filling with 'Other'")
-        df["project_type"] = "Other"
+        print("  ⚠ 'property_type_raw' column not found — filling with 'Other'")
+        df["project_type"] = df.get("project_type", "Other")
+        # print("  ⚠ 'project_type' and 'property_type_raw' columns not found — filling with 'Other'")
+        # df["project_type"] = "Other"
 
     # Buyer pincode
     if "buyer_pincode" in df.columns:

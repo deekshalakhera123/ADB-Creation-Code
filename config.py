@@ -73,13 +73,13 @@ def get_city_loading(city: str) -> dict:
     return {**defaults, **overrides}
 
 # ── Property type classification ──────────────────────────────────────────────
-RESIDENTIAL_TYPES = frozenset([
+RESIDENTIAL_TYPES = [
     "Flat", "Apartment", "Room", "Bunglow", "Studio", "Hall",'Unit',
     "Duplex", "Flat/Shop", "Row_House", "Penthouse", "Triplex Apartment",
-])
-COMMERCIAL_TYPES = frozenset([
+]
+COMMERCIAL_TYPES = [
     "Shop", "Office", "Commercial Unit", "Commercial", "Commerical", "Showroom",
-])
+]
 
 # ── Price range step ──────────────────────────────────────────────────────────
 PRICE_STEP = 2_000_000  # 20 Lakhs

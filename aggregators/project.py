@@ -76,11 +76,13 @@ def build_project_aggregation(
     PT_GROUPS  = group_cols + ["property_type"]
     BHK_GROUPS = group_cols + ["bhk_br"]
 
-    dataframe = dataframe[(dataframe["manual_processed"] == "Yes")&(dataframe['property_category_id']=='Sale')].copy()
+    dataframe = dataframe[(dataframe["manual_processed"] == "Yes")&(dataframe['property_category']=='Sale')].copy()
     dataframe['rate_on_net_ca']=dataframe['rate_on_net_ca'].astype(float)
     dataframe['agreement_price']=dataframe['agreement_price'].astype(float)
 
-    m = build_masks(dataframe, base_col="internal_index")
+    print("data in dataframe ", dataframe.shape)
+
+    m = build_masks(dataframe, base_col="project_name")
 
     print("=== Analysis Masks Summary ===")
     print(f"Base (all transactions)  : {m['base'].sum()}")
@@ -574,15 +576,15 @@ def build_project_aggregation(
 # ============================================================
 
 def build_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    return build_project_aggregation(df, ["internal_index"],'internal_index')
+    return build_project_aggregation(df, ["index","project_name"],'project_name')
 
 
 def build_yoy_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["internal_index", "year"],'internal_index')
-    base = base.sort_values(["internal_index", "year"])
+    base = build_project_aggregation(df, ["index","project_name", "year"],'project_name')
+    base = base.sort_values(["index","project_name", "year"])
     return base
 
 def build_qoq_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["internal_index", "quarter"],'internal_index')
-    base = base.sort_values(["internal_index", "quarter"])
+    base = build_project_aggregation(df, ["index","project_name", "quarter"],'project_name')
+    base = base.sort_values(["index","project_name", "quarter"])
     return base
