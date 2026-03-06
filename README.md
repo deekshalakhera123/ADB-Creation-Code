@@ -1,204 +1,210 @@
-# ADB1 — IGR Real Estate Data Analysis
+# ADB1 — Real Estate Analytics Pipeline
 
-Automated pipeline to process raw IGR (Inspector General of Registration) transaction data and produce a wide **project-wise summary** with property-type and BHK-level breakdowns.
+A data pipeline that pulls IGR (Inspector General of Registration) transaction data from PostgreSQL, preprocesses it, runs statistical aggregations across project / location / city dimensions, and exports three merged Excel reports.
 
 ---
 
-## Folder Structure
+## Project Structure
 
 ```
-ADB1 Codes/
+├── run.py                  # Entry point — orchestrates the full pipeline
+├── config.py               # All constants, ranges, loading factors, DB config
+├── preprocessing.py        # Raw DataFrame → clean, analysis-ready DataFrame
 │
-├── run.py                        ← Entry point — run this file
-├── config.py                     ← All constants (floor map, loading factors, etc.)
-├── preprocessing.py              ← Raw data cleaning and column derivation
+├── aggregators/
+│   ├── base.py             # Shared pipeline mechanics (masks, pivots, merges)
+│   ├── project.py          # Project-wise aggregation (Overall / YoY / QoQ)
+│   ├── location.py         # Location-wise aggregation (Overall / YoY / QoQ)
+│   └── city.py             # City-wise aggregation (Overall / YoY / QoQ)
 │
 ├── stats/
-│   ├── rate.py                   ← Rate calculations (percentile, rate ranges, floor-wise)
-│   ├── area.py                   ← Area range calculations (property-type & BHK wise)
-│   ├── price.py                  ← Price range calculations + Cr/L/K formatter
-│   └── buyer.py                  ← Pincode / buyer statistics
+│   ├── age.py              # Buyer age-range statistics
+│   ├── area.py             # Carpet area-range statistics
+│   ├── buyer.py            # Pincode / buyer origin statistics
+│   ├── price.py            # Agreement price-range statistics
+│   └── rate.py             # Rate-per-sqft statistics (percentiles, floor-wise)
 │
-└── aggregators/
-    ├── base.py                   ← Shared helpers (masks, pivot, apply_and_merge)
-    └── project.py                ← Full project-wise pipeline (build_project_wise)
+├── .env                    # ← Local only, never push (DB credentials)
+├── .env.example            # ← Safe to push (dummy credentials template)
+├── .gitignore
+└── README.md
+```
+
+---
+
+## What It Does
+
+1. **Connects to PostgreSQL** and fetches available cities from the `cities` table
+2. **Prompts** you to select one or more cities interactively
+3. **Loads** transaction data from `transaction_db1` filtered by `city_id`
+4. **Preprocesses** the data — floor normalisation, area/rate calculations, age extraction, property type classification
+5. **Applies mappings** — BHK standardisation and property type refinement from reference Excel files
+6. **Runs 9 pipelines** per city (Project / Location / City × Overall / YoY / QoQ)
+7. **Merges** results in memory and saves **3 final Excel files**:
+   - `project_merged.xlsx`
+   - `location_merged.xlsx`
+   - `city_merged.xlsx`
+
+Each output has a `Type` column (Overall / YoY / QoQ) and a `Period` column for the time dimension.
+
+---
+
+## Database Schema
+
+Two tables are required:
+
+```sql
+-- City lookup
+cities (
+    city_id   INTEGER PRIMARY KEY,
+    city_name TEXT
+)
+
+-- All transactions
+transaction_db1 (
+    city_id            INTEGER,   -- FK to cities
+    project_name       TEXT,
+    location           TEXT,
+    floor_no           TEXT,
+    net_carpet_area_sqmt FLOAT,
+    agreement_price    FLOAT,
+    property_category  TEXT,
+    property_type      TEXT,
+    property_type_raw  TEXT,
+    purchaser_name     TEXT,
+    buyer_pincode      INTEGER,
+    transaction_date   DATE,
+    document_no        TEXT,
+    manual_processed   TEXT,
+    -- ... other columns
+)
 ```
 
 ---
 
 ## Setup
 
-### Requirements
-
-```
-pandas
-numpy
-openpyxl
-```
-
-Install with:
+### 1. Clone the repo
 
 ```bash
-pip install pandas numpy openpyxl
+git clone https://github.com/your-username/your-repo.git
+cd your-repo
 ```
 
-### Input Files
+### 2. Install dependencies
 
-Two Excel files are required. Update the paths in `run.py` before running:
+```bash
+pip install pandas sqlalchemy psycopg2-binary openpyxl rapidfuzz python-dotenv
+```
 
-| Variable | Description |
-|---|---|
-| `DATA_PATH` | Village-wise IGR processed data (DB1 format) |
-| `RERA_KEYWORDS_PATH` | RERA keywords file with BHK and property type mappings |
-| `OUTPUT_PATH` | Where to save the output Excel file |
+### 3. Configure environment
+
+Copy `.env.example` to `.env` and fill in your credentials:
+
+```bash
+cp .env.example .env
+```
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=newdatadb
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+### 4. Update file paths in `run.py`
+
+```python
+RERA_KEYWORDS_PATH = r"path\to\RERA_All_Keywords_BHK_Prop_Type.xlsx"
+PROP_TYPE_PATH     = r"path\to\Property_type_keywords.xlsx"
+OUTPUT_DIR         = r"path\to\output\folder"
+```
 
 ---
 
-## How to Run
+## Running
 
 ```bash
-cd ".\ADB1 Codes"
 python run.py
 ```
 
-Console output:
+You will be prompted to select cities:
 
 ```
-Loading data...
-Preprocessing...
-Applying BHK mapping...
-=== Analysis Masks Summary ===
-Base (all transactions)  : XXXX
-Valid price              : XXXX
-Valid area               : XXXX
-Valid rate               : XXXX
-
-Aggregated projects: XXX
-
-=== Final Output ===
-Shape: (XXX, XXX)
-Saving to output_project_wise.xlsx...
-Done.
+==================================================
+  CITY SELECTION
+==================================================
+Available cities:
+  1. Mumbai
+  2. Pune
+  3. Thane
+  4. Dubai
+  5. ALL cities
+==================================================
+Enter city numbers separated by commas (e.g. 1,3) or press Enter for ALL:
 ```
 
 ---
 
-## Pipeline Steps
+## Output
 
-### 1. Preprocessing (`preprocessing.py`)
+Three Excel files are saved to `OUTPUT_DIR`:
 
-Raw data is filtered and cleaned:
+| File | Contents |
+|------|----------|
+| `project_merged.xlsx` | Project-wise stats — Overall + YoY + QoQ stacked |
+| `location_merged.xlsx` | Location-wise stats — Overall + YoY + QoQ stacked |
+| `city_merged.xlsx` | City-wise stats — Overall + YoY + QoQ stacked |
 
-- Floor numbers are normalised using `FLOOR_MAP` (e.g. "Ground" → 0, "Stilt" → 0)
-- Derived columns added:
+Each file contains:
 
-| Column | Formula |
-|---|---|
-| `carpet_sqft` | `net_carpet_area_sqmt × 10.764` |
-| `rate_on_net_ca` | `agreement_price / carpet_sqft` |
-| `saleable_sqft` | `net_carpet_area_sqmt × 1.35` (residential) or `× 1.40` (commercial) |
-| `rate_on_sa` | `agreement_price / saleable_sqft` |
-| `project_type` | Classified as Residential / Commercial / Other |
-| `age` | Extracted from Marathi-format `purchaser_name` |
-| `buyer_pincode` | Coerced to numeric |
-
-- BHK values are standardised using the RERA keywords mapping file
-
----
-
-### 2. Analysis Masks (`aggregators/base.py`)
-
-Boolean masks define which rows are eligible for each type of calculation:
-
-| Mask | Purpose |
-|---|---|
-| `base` | Rows with a valid `project_name` — all transactions |
-| `valid_price` | `agreement_price > 0` — for averages and price ranges |
-| `valid_area` | `net_carpet_area_sqmt > 0` — for area ranges |
-| `valid_rate` | `valid_price AND valid_area` — for rate calculations |
-| `valid_carpet` | `carpet_sqft > 0` — for BHK area ranges |
-| `bhk_base` | `base AND NOT in [Shop, Office, Others]` — for BHK analysis |
+- `Type` — Overall / YoY / QoQ
+- `Period` — e.g. Overall, 2023, Q1-2024
+- Units sold, total sales, avg price per property type and BHK
+- Rate percentiles (P50 / P75 / P90) on carpet area and saleable area
+- Floor-wise 90th percentile rate
+- Most prevailing rate range
+- Price range distribution (unit sold / total sales / carpet area)
+- Rate range distribution
+- Area range distribution
+- Age range distribution (buyer age bands)
+- Top buyer pincodes
 
 ---
 
-### 3. Output Columns
+## Configuration (`config.py`)
 
-#### Base project metrics
-
-- `igr_village`, `city`, `project_type`
-- `total_sales`, `total_carpet_area`, `total_transactions`
-- `max_floor`, `recent_transaction_date`
-
-#### Property-type wise (Flat / Shop / Office / etc.)
-
-- Units sold, total agreement price, average agreement price
-- Carpet area consumed
-- Weighted avg rate, P50 / P75 / P90 rate on net carpet area
-- Weighted avg rate, P50 / P75 / P90 rate on saleable area
-- Most prevailing rate range (±5% band around 90th percentile)
-- Rate range bucket counts (±3 × ₹1000 intervals around mean)
-- Area range bucket counts / total sales / avg sales (±2 × 200 sqft intervals around mean)
-- Floor-wise 90th percentile rate (5-floor buckets: 0-5, 5-10, ...)
-- Agreement price range — unit sold / total sales / carpet area consumed (20L buckets)
-
-#### BHK wise (1BHK / 2BHK / 3BHK / etc.)
-
-- Units sold, total agreement price, average agreement price
-- Carpet area consumed, average carpet area
-- P50 / P75 / P90 rate on net carpet area
-- Area range bucket counts / total sales / avg sales
-- Agreement price range — unit sold / total sales / carpet area consumed
-
-#### Buyer statistics (project level)
-
-- `pincode_stats` — dict of `{pincode: [count, pct, total_price, avg_price]}`
+| Constant | Description |
+|----------|-------------|
+| `FLOOR_MAP` | Maps raw floor strings to numeric floor numbers |
+| `RESIDENTIAL_LOADING` / `COMMERCIAL_LOADING` | Global saleable area loading factors |
+| `CITY_LOADING` | Per-city loading factor overrides |
+| `CITY_RANGES` | Per-city min/max overrides for rate, area, price |
+| `PRICE_STEP` | Price bucket width (default ₹20L) |
+| `AREA_STEP` | Area bucket width (default 200 sqft) |
+| `RATE_STEP` | Rate bucket width (default ₹1,000/sqft) |
+| `AGE_INTERVAL` | Age bucket width (default 5 years) |
+| `DB_CONFIG` | PostgreSQL connection (loaded from `.env`) |
 
 ---
 
-## Key Design Decisions
+## Cities Supported
 
-**Empty buckets are dropped** — any range bucket (area, price, rate) with no data is excluded from the output dict. You will never see `NaN` keys in the range columns.
+| City | Rate Range | Area Range | Price Range |
+|------|-----------|------------|-------------|
+| Mumbai | ₹2K–40K | 200–5000 sqft | ₹5L–5Cr |
+| Pune | ₹2K–40K | 200–4000 sqft | ₹5L–1.5Cr |
+| Thane | ₹2K–40K | 200–4500 sqft | ₹5L–2Cr |
+| Dubai | AED 1K–4K | 300–1000 sqft | 2L–1Cr |
 
-**Pincode stays as int** — `buyer_pincode` is cast to `int` in the output so keys appear as `411027` not `np.float64(411027.0)`.
-
-**Rate percentiles use MMA chart methodology** — linear interpolation between the two values bracketing the 90th percentile index, not standard `numpy.percentile`.
-
-**Bounds computed on full group** — for price ranges, the bucket boundaries (min/max) are derived from the full dataset before filtering to a segment, so all property types / BHKs share consistent bucket labels within a project.
-
----
-
-## Adding Location-wise or City-wise Pipelines
-
-The `stats/` modules are completely reusable. To add a new aggregation level:
-
-1. Create `aggregators/location.py` (or `city.py`)
-2. Change the group key constants:
-```python
-# project-wise
-- Only rows where `manual_processed == 'Yes'` are kept
-PROJ_COLS = ["index", "project_name"]
-
-# location-wise
-PROJ_COLS = ["city", "igr_rera_village_mapped"]
-
-# city-wise
-PROJ_COLS = ["city"]
-```
-3. Call `build_masks(dataframe, base_col="city")` with the appropriate base column
-4. Add the new pipeline to `run.py`
-
-No changes needed in `stats/` — all stat functions take a plain DataFrame and return a dict regardless of aggregation level.
+Adding a new city requires only adding it to the `cities` table in PostgreSQL and optionally adding overrides in `CITY_RANGES` and `CITY_LOADING` in `config.py`.
 
 ---
 
-## Config Reference (`config.py`)
+## Notes
 
-| Constant | Value | Description |
-|---|---|---|
-| `FLOOR_MAP` | dict | Maps raw floor strings to integers |
-| `RESIDENTIAL_LOADING` | 1.35 | Loading factor for Flat / Others |
-| `COMMERCIAL_LOADING` | 1.40 | Loading factor for Shop / Office |
-| `PRICE_STEP` | 2,000,000 | 20 Lakh step for price range buckets |
-| `NON_BHK_VALUES` | `[Shop, Office, Others]` | Excluded from BHK analysis |
-| `RESIDENTIAL_TYPES` | list | Property types classified as Residential |
-| `COMMERCIAL_TYPES` | list | Property types classified as Commercial |
+- Each city is processed separately through pipelines to avoid column explosion from pivots
+- BR columns in output are reordered numerically: `<1br → 1br → 1.5br → 2br → >3br → 4br`
+- If a pipeline result exceeds Excel's 16,384 column limit it is automatically saved as CSV
+- Rows with `manual_processed != 'Yes'` or `property_category != 'Sale'` are excluded from aggregation
