@@ -289,7 +289,7 @@ def build_city_aggregation(
             .round(2)
             .pivot(index=group_cols, columns="bhk_br")
         )
-        bhk_rate.columns = [f"{c[1]} - {c[0]}" for c in bhk_rate.columns]
+        bhk_rate.columns = [f"{c[1]}_{c[0]}" for c in bhk_rate.columns]
         city_wise_summary = city_wise_summary.merge(
             bhk_rate.reset_index(), on=group_cols, how="left",
         )
@@ -605,27 +605,48 @@ def build_city_aggregation(
 # WRAPPERS
 # ============================================================
 
-def build_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+def build_city_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
+    r = city_ranges or {}
     return build_city_aggregation(
         df,
         ["city"],
         "city",
+        rate_min  = r.get("MIN_RATE",  MIN_RATE),
+        rate_max  = r.get("MAX_RATE",  MAX_RATE),
+        price_min = r.get("MIN_PRICE", MIN_PRICE),
+        price_max = r.get("MAX_PRICE", MAX_PRICE),
+        area_min  = r.get("MIN_AREA",  MIN_AREA),
+        area_max  = r.get("MAX_AREA",  MAX_AREA),
     )
 
 
-def build_yoy_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+def build_yoy_city_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
+    r = city_ranges or {}
     base = build_city_aggregation(
         df,
         ["city", "year"],
         "city",
+        rate_min  = r.get("MIN_RATE",  MIN_RATE),
+        rate_max  = r.get("MAX_RATE",  MAX_RATE),
+        price_min = r.get("MIN_PRICE", MIN_PRICE),
+        price_max = r.get("MAX_PRICE", MAX_PRICE),
+        area_min  = r.get("MIN_AREA",  MIN_AREA),
+        area_max  = r.get("MAX_AREA",  MAX_AREA),
     )
     return base.sort_values(["city", "year"])
 
 
-def build_qoq_city_wise(df: pd.DataFrame) -> pd.DataFrame:
+def build_qoq_city_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
+    r = city_ranges or {}
     base = build_city_aggregation(
         df,
         ["city", "quarter"],
         "city",
+        rate_min  = r.get("MIN_RATE",  MIN_RATE),
+        rate_max  = r.get("MAX_RATE",  MAX_RATE),
+        price_min = r.get("MIN_PRICE", MIN_PRICE),
+        price_max = r.get("MAX_PRICE", MAX_PRICE),
+        area_min  = r.get("MIN_AREA",  MIN_AREA),
+        area_max  = r.get("MAX_AREA",  MAX_AREA),
     )
     return base.sort_values(["city", "quarter"])

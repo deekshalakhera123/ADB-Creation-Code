@@ -17,7 +17,7 @@ from config import (
     RESIDENTIAL_TYPES,
     COMMERCIAL_TYPES,
 )
-
+from config import get_city_loading
 
 def classify_project_type(property_type_raw: str) -> str:
     if property_type_raw in RESIDENTIAL_TYPES:
@@ -44,66 +44,6 @@ def extract_age(text: str) -> list:
         return numbers
     except Exception:
         return []
-
-
-# def preprocess(df: pd.DataFrame) -> pd.DataFrame:
-#     """
-#     Filter, normalise and derive all required columns.
-#     Returns a clean copy ready for analysis.
-#     """
-    
-#     df.columns = df.columns.str.lower()
-
-#     # Floor number normalisation
-#     df["floor_no"] = df["floor_no"].replace(FLOOR_MAP).astype(float)
-
-#     # Age extraction
-#     df["age"] = df["purchaser_name"].apply(extract_age)
-
-#     # Derived area & rate columns
-#     df["carpet_sqft"]  = df["net_carpet_area_sqmt"] * 10.764
-#     # --------TAG
-#     mask = df['property_category'] == 'Sale'
-#     df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')
-#     df.loc[mask, "carpet_sqft"] = pd.to_numeric(df.loc[mask, "carpet_sqft"], errors='coerce')
-
-#     # Replace 0 with NaN to avoid division by zero
-#     df["carpet_sqft"] = df["carpet_sqft"].replace(0, float('nan'))
-
-#     df.loc[mask, "rate_on_net_ca"] = (
-#         df.loc[mask, "agreement_price"] / df.loc[mask, "carpet_sqft"]
-#     )
-    
-#     # Saleable area + rate
-#     df["saleable_sqft"] = np.where(
-#         df["property_type"].isin(["Flat", "Others"]),
-#         df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
-#         df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
-#     )
-
-#     # Replace 0 with NaN to avoid division by zero
-#     df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
-
-#     # ✅ Use mask here too — agreement_price has strings in non-Sale rows
-#     df.loc[mask, "rate_on_sa"] = (
-#         df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
-#     )
-
-#     # Project-type classification
-#     if 'project_type' not in df.columns:
-
-#         df['project_type']=df['property_type_raw'].apply(classify_project_type)
-#         # project_type_mask = df["project_type"].isna()
-
-#         # df.loc[project_type_mask, "project_type"] = (
-#         #     df.loc[project_type_mask, "property_type_raw"]
-#         #     .apply(classify_project_type)
-#         # )
-
-#     # Buyer pincode as numeric
-#     df["buyer_pincode"] = pd.to_numeric(df["buyer_pincode"], errors="coerce")
-
-#     return df
 
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
@@ -150,15 +90,25 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     # Saleable area
     if "net_carpet_area_sqmt" in df.columns and "property_type" in df.columns:
+        # Default to global loading factors
+        res_loading = df["city"].map(
+            lambda c: get_city_loading(c)["RESIDENTIAL_LOADING"]
+        )
+        com_loading = df["city"].map(
+            lambda c: get_city_loading(c)["COMMERCIAL_LOADING"]
+        )
+
         df["saleable_sqft"] = np.where(
             df["property_type"].isin(["Flat", "Others"]),
-            df["net_carpet_area_sqmt"] * RESIDENTIAL_LOADING,
-            df["net_carpet_area_sqmt"] * COMMERCIAL_LOADING,
+            df["net_carpet_area_sqmt"] * res_loading,
+            df["net_carpet_area_sqmt"] * com_loading,
         )
-        df["saleable_sqft"] = df["saleable_sqft"].replace(0, float('nan'))
+
+        df["saleable_sqft"] = df["saleable_sqft"].replace(0, float("nan"))
         df.loc[mask, "rate_on_sa"] = (
             df.loc[mask, "agreement_price"] / df.loc[mask, "saleable_sqft"]
         )
+        
     else:
         df["saleable_sqft"] = np.nan
         df["rate_on_sa"]    = np.nan

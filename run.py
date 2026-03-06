@@ -18,10 +18,13 @@ Rules:
     - Every file must be prefixed with the city name  e.g. Mumbai_*.xlsx
     - Each city is processed separately through pipelines (avoids column explosion)
     - Results are concatenated as rows into one output file per pipeline
+    - BR columns are reordered numerically (<1br, 1br, 1.5br ... >3br, 4br)
+    - All other columns stay in original order
 """
 
 import sys
 import os
+import re
 import time
 import glob
 
@@ -33,17 +36,14 @@ from preprocessing import preprocess, load_bhk_mapping, apply_bhk_mapping, load_
 from aggregators.project  import build_project_wise, build_yoy_project_wise, build_qoq_project_wise
 from aggregators.location import build_location_wise, build_yoy_location_wise, build_qoq_location_wise
 from aggregators.city     import build_city_wise, build_yoy_city_wise, build_qoq_city_wise
-
+from config import get_city_ranges
 
 # ── Folder paths — one folder per city ───────────────────────────────────────
-# All Excel files inside each folder whose name starts with the city name
-# will be loaded automatically.
-
 CITY_FOLDER_PATHS = {
-    "Mumbai" : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Mumbai",
-    "Pune"   : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Pune",
-    "Thane"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Thane",
-    "Dubai"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Dubai",
+    "Mumbai" : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Mumbai",
+    "Pune"   : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Pune",
+    "Thane"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Thane",
+    "Dubai"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Dubai",
 }
 
 RERA_KEYWORDS_PATH = r"E:\IGR New Approach - DB1\Required Excels\RERA_All_Keywords_BHK_Prop_Type.xlsx"
@@ -114,13 +114,12 @@ def load_city_files(city: str, folder: str) -> pd.DataFrame:
             Mumbai_Andheri_igr_processed_data_db1.xlsx  ← loaded
             notes.xlsx                                   ← skipped (no city prefix)
     """
-    # Match files starting with city name (case-sensitive first, then fallback)
-    pattern      = os.path.join(folder, f"{city}*.xlsx")
-    files        = glob.glob(pattern)
+    pattern = os.path.join(folder, f"{city}*.xlsx")
+    files   = glob.glob(pattern)
 
     if not files:
-        pattern  = os.path.join(folder, f"{city.lower()}*.xlsx")
-        files    = glob.glob(pattern)
+        pattern = os.path.join(folder, f"{city.lower()}*.xlsx")
+        files   = glob.glob(pattern)
 
     if not files:
         print(f"  ✗ No files found for {city} in: {folder}")
@@ -129,12 +128,12 @@ def load_city_files(city: str, folder: str) -> pd.DataFrame:
     print(f"  Found {len(files)} file(s) for {city}:")
 
     frames = []
-    for filepath in sorted(files):
+    for filepath in sorted(files):          # ← loads ALL files (removed [:2] limit)
         filename = os.path.basename(filepath)
         try:
-            df              = pd.read_excel(filepath)
-            df["city"]        = city      # ensure city column exists
-            df["source_file"] = filename  # track which file each row came from
+            df                = pd.read_excel(filepath)
+            df["city"]        = city
+            df["source_file"] = filename
             frames.append(df)
             print(f"    ✓ {filename}  ({len(df):,} rows)")
         except Exception as e:
@@ -145,7 +144,6 @@ def load_city_files(city: str, folder: str) -> pd.DataFrame:
 
     combined = pd.concat(frames, ignore_index=True)
 
-    # Warn about any missing expected columns
     missing_cols = [
         c for c in EXPECTED_COLUMNS
         if c not in combined.columns.str.lower().tolist()
@@ -169,6 +167,133 @@ def save_result(df: pd.DataFrame, out_path: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# BR COLUMN REORDER
+# ─────────────────────────────────────────────────────────────────────────────
+# Keeps all non-br columns in their original order.
+# Collects all br columns, groups by prefix sorted numerically,
+# metrics in consistent order within each group, appended at the end.
+#
+# Before: ..., 2br_sold, 1br_sold, 3br_sold, 2br_avg_price, 1br_avg_price ...
+# After:  ...(non-br original order)...,
+#         <1br_sold, <1br_avg_price, ...,
+#          1br_sold,  1br_avg_price, ...,
+#         1.5br_sold, ...,
+#          2br_sold,  2br_avg_price, ...,
+#         >3br_sold, ...,
+#          4br_sold,  ...
+
+_BR_METRIC_ORDER = [
+    "_sold_igr",
+    "_total_agreement_price",
+    "_avg_agreement_price",
+    "_ca_consumed_sqft_igr",
+    "_wt_avg_rate_nca",
+    "_p50_rate_nca",
+    "_p75_rate_nca",
+    "_p90_rate_nca",
+    "_wt_avg_rate_sa",
+    "_p50_rate_sa",
+    "_p75_rate_sa",
+    "_p90_rate_sa",
+    "_floor_wise_90p_rate",
+    "_most_prevailing_rate_range",
+    "_total_unit_sold_in_rate_range",
+    "_total_unit_sold_in_area_range",
+    "_total_agreement_price_in_area_range",
+    "_avg_agreement_price_in_area_range",
+    "_total_ca_consumed_in_area_range_sqft",
+    "_avg_carpet_area_in_sqft",
+    "_agreement_price_range_unit_sold",
+    "_agreement_price_range_total_sales",
+    "_agreement_price_range_ca_consumed_sqft",
+    "_rate_range_unit_sold",
+    "_rate_range_total_sales",
+    "_rate_range_ca_consumed_sqft",
+    "_age_range_unit_sold",
+    "_age_range_total_agreement_price",
+    "_age_range_ca_consumed_sqft",
+]
+
+# Sorted longest-first so most specific suffix is matched first
+_BR_SUFFIXES_SORTED = sorted(_BR_METRIC_ORDER, key=len, reverse=True)
+
+
+def _is_br_col(col: str) -> bool:
+    """True if column belongs to a br prefix e.g. 1br_*, 2.5br_*, <1br_*, >3br_*"""
+    return bool(re.match(r'^[<>]?\d+(\.\d+)?br_', col))
+
+
+def _get_br_prefix(col: str):
+    """'2br_sold_igr' → '2br',  '<1br_avg_agreement_price' → '<1br'"""
+    m = re.match(r'^([<>]?\d+(?:\.\d+)?br)_', col)
+    return m.group(1) if m else None
+
+
+def _br_prefix_num(prefix: str) -> float:
+    """Numeric sort key: <1br=0.5, 1br=1.0, 1.5br=1.5, >3br=3.5, 4br=4.0"""
+    digits = re.sub(r"[^0-9.]", "", prefix) or "0"
+    n = float(digits)
+    if prefix.startswith("<"):
+        return n - 0.5
+    if prefix.startswith(">"):
+        return n + 0.5
+    return n
+
+
+def _br_metric_key(col: str) -> int:
+    """Sort key for metric within a br prefix."""
+    for sfx in _BR_SUFFIXES_SORTED:
+        if col.endswith(sfx):
+            try:
+                return _BR_METRIC_ORDER.index(sfx)
+            except ValueError:
+                return 999
+    return 999
+
+
+def reorder_br_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep non-br columns in original order.
+    Sort br columns numerically by prefix, metrics in consistent order within each group.
+    """
+    all_cols    = df.columns.tolist()
+    non_br_cols = [c for c in all_cols if not _is_br_col(c)]
+    br_cols     = [c for c in all_cols if _is_br_col(c)]
+
+    if not br_cols:
+        return df   # nothing to reorder
+
+    # Collect unique br prefixes then sort numerically
+    seen, br_prefixes = set(), []
+    for c in br_cols:
+        p = _get_br_prefix(c)
+        if p and p not in seen:
+            br_prefixes.append(p)
+            seen.add(p)
+
+    sorted_prefixes = sorted(br_prefixes, key=_br_prefix_num)
+
+    # Build ordered br section: each prefix → metrics in consistent order
+    ordered_br = []
+    for prefix in sorted_prefixes:
+        prefix_cols = sorted(
+            [c for c in br_cols if _get_br_prefix(c) == prefix],
+            key=_br_metric_key,
+        )
+        ordered_br.extend(prefix_cols)
+
+    final = non_br_cols + ordered_br
+
+    # Safety — no column lost or duplicated
+    if set(final) != set(all_cols):
+        lost = set(all_cols) - set(final)
+        print(f"  ⚠ reorder_br_columns: {len(lost)} unmatched cols appended at end")
+        final += list(lost)
+
+    return df[final]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -182,7 +307,7 @@ def main():
 
     # ── 2. Load all files for each selected city ──────────────────────────────
     print()
-    city_dataframes = {}   # { city_name: dataframe }
+    city_dataframes = {}
 
     for city in selected_cities:
         folder = CITY_FOLDER_PATHS[city]
@@ -202,7 +327,7 @@ def main():
     # Preprocess and map once on the full dataset (efficient),
     # then split back by city for pipeline runs.
 
-    df_raw    = pd.concat(city_dataframes.values(), ignore_index=True)
+    df_raw = pd.concat(city_dataframes.values(), ignore_index=True)
     print(f"\n  Total rows loaded: {len(df_raw):,}")
 
     print("\nPreprocessing...")
@@ -237,12 +362,11 @@ def main():
         ("City QoQ",     build_qoq_city_wise,     "output_qoq_city_wise.xlsx"),
     ]
 
-    # Collect results per pipeline across all cities
     pipeline_results = {filename: [] for _, _, filename in pipeline_defs}
 
     # ── 5. Run each city separately through all pipelines ────────────────────
     #
-    # WHY SEPARATELY and not all together:
+    # WHY SEPARATELY:
     #   Running all cities in one build_fn() call causes pivot explosion.
     #   Each unique property_type and bhk_br value becomes a column.
     #   4 cities × 10 property types × 8 range buckets × 5 metrics = 30,000+ cols.
@@ -252,15 +376,22 @@ def main():
     for city in selected_cities:
 
         if city not in city_dataframes:
-            continue   # was skipped during load
+            continue
 
         print(f"\n{'='*50}")
         print(f"  Processing: {city}")
         print(f"{'='*50}")
 
-        # Slice only this city's rows from the preprocessed + mapped dataframe
-        city_df = dataframe[dataframe["city"] == city].copy()
+        city_df     = dataframe[dataframe["city"] == city].copy()
+        city_ranges = get_city_ranges(city)
+
         print(f"  Rows: {len(city_df):,}")
+        print(
+            f"  Ranges → "
+            f"Rate: {city_ranges['MIN_RATE']}-{city_ranges['MAX_RATE']} | "
+            f"Area: {city_ranges['MIN_AREA']}-{city_ranges['MAX_AREA']} | "
+            f"Price: {city_ranges['MIN_PRICE']}-{city_ranges['MAX_PRICE']}"
+        )
 
         if city_df.empty:
             print(f"  ⚠ No rows after preprocessing — skipping {city}")
@@ -282,7 +413,7 @@ def main():
             except Exception as e:
                 print(f"  ✗ FAILED [{label}]: {e}")
 
-    # ── 6. Concat all cities per pipeline and save one file each ─────────────
+    # ── 6. Concat → reorder BR cols → save ───────────────────────────────────
     print(f"\n{'='*50}")
     print("  Saving output files...")
     print(f"{'='*50}\n")
@@ -294,8 +425,12 @@ def main():
             print(f"  ✗ No data for {filename} — skipped")
             continue
 
-        # Stack city results as rows — columns align by name, gaps filled with NaN
-        final    = pd.concat(frames, ignore_index=True)
+        # Stack city results as rows — gaps filled with NaN automatically
+        final = pd.concat(frames, ignore_index=True)
+
+        # Reorder only BR columns numerically — all other cols stay as-is
+        final = reorder_br_columns(final)
+
         out_path = os.path.join(OUTPUT_DIR, filename)
         save_result(final, out_path)
 
@@ -304,3 +439,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+

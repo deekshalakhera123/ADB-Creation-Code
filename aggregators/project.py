@@ -251,7 +251,7 @@ def build_project_aggregation(
             .reset_index()
             .pivot(index=group_cols, columns="bhk_br")
         )
-        bhk_rate.columns = [f"{c[1]} - {c[0]}" for c in bhk_rate.columns]
+        bhk_rate.columns = [f"{c[1]}_{c[0]}" for c in bhk_rate.columns]
         bhk_rate = bhk_rate.round(2) 
         project_wise_summary = project_wise_summary.merge(
             bhk_rate.reset_index(),
@@ -549,6 +549,7 @@ def build_project_aggregation(
 
     # Round plain float columns
     float_cols = project_wise_summary.select_dtypes(include='float').columns
+    
     project_wise_summary[float_cols] = project_wise_summary[float_cols].round(2)
 
     # Round floats inside dict columns
