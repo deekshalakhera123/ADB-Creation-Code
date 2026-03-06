@@ -26,37 +26,83 @@ import sys
 import os
 import re
 import time
-import glob
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
+from sqlalchemy import create_engine, text
 
 from preprocessing import preprocess, load_bhk_mapping, apply_bhk_mapping, load_prop_mapping, apply_prop_mapping
 from aggregators.project  import build_project_wise, build_yoy_project_wise, build_qoq_project_wise
 from aggregators.location import build_location_wise, build_yoy_location_wise, build_qoq_location_wise
 from aggregators.city     import build_city_wise, build_yoy_city_wise, build_qoq_city_wise
-from config import get_city_ranges
+from config import get_city_ranges, DB_CONFIG, DB_CITIES_TABLE, DB_TRANSACTIONS_TABLE
 
-# ── Folder paths — one folder per city ───────────────────────────────────────
-CITY_FOLDER_PATHS = {
-    "Mumbai" : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Mumbai",
-    "Pune"   : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Pune",
-    "Thane"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Thane",
-    "Dubai"  : r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\Data Excels\Dubai",
-}
-
+# ── Output directory ──────────────────────────────────────────────────────────
 RERA_KEYWORDS_PATH = r"E:\IGR New Approach - DB1\Required Excels\RERA_All_Keywords_BHK_Prop_Type.xlsx"
 PROP_TYPE_PATH     = r"E:\IGR New Approach - DB1\Required Excels\Property_type_keywords.xlsx"
 OUTPUT_DIR         = r"E:\IGR New Approach - DB1\Pune IGR excel Data 2026\ADB1 Codes\ADB1 Sheets"
 
-# Columns that must exist in every city file
+# Columns that must exist in every city's data
 EXPECTED_COLUMNS = [
     "floor_no", "purchaser_name", "net_carpet_area_sqmt",
-    "agreement_price", "property_category", "property_type",
+    "agreement_price", "property_category_id", "property_type",
     "property_type_raw", "project_type", "buyer_pincode",
     "transaction_date", "document_no",
 ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATABASE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_engine():
+    """Create and return a SQLAlchemy engine from DB_CONFIG."""
+    cfg = DB_CONFIG
+    url = (
+        f"postgresql+psycopg2://{cfg['user']}:{cfg['password']}"
+        f"@{cfg['host']}:{cfg['port']}/{cfg['dbname']}"
+    )
+    return create_engine(url)
+
+
+def fetch_available_cities(engine) -> dict:
+    """
+    Query the cities table and return {city_name: city_id}.
+    """
+    query = text(f"SELECT city_id, city_name FROM {DB_CITIES_TABLE} ORDER BY city_name")
+    with engine.connect() as conn:
+        rows = conn.execute(query).fetchall()
+    return {row.city_name: row.city_id for row in rows}
+
+
+def load_city_from_db(engine, city: str, city_id: int) -> pd.DataFrame:
+    """
+    Load all transactions for a single city by joining
+    transaction_db1 with the cities table on city_id.
+    Tags each row with the city name.
+    """
+    query = text(f"""
+        SELECT t.*
+        FROM {DB_TRANSACTIONS_TABLE} t
+        WHERE t.city_id = :city_id
+    """)
+
+    print(f"  Querying DB for {city} (city_id={city_id})...")
+    t0 = time.time()
+
+    with engine.connect() as conn:
+        df = pd.read_sql(query, conn, params={"city_id": city_id})
+
+    df["city"] = city
+
+    print(f"    ✓ {city}: {len(df):,} rows loaded ({time.time()-t0:.1f}s)")
+
+    missing_cols = [c for c in EXPECTED_COLUMNS if c not in df.columns.str.lower().tolist()]
+    if missing_cols:
+        print(f"    ⚠ Missing columns in {city}: {missing_cols}")
+
+    return df
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,58 +147,6 @@ def select_cities(available_cities: list) -> list:
         selected = [available_cities[c - 1] for c in choices]
         print(f"  → Loading: {selected}")
         return selected
-
-
-def load_city_files(city: str, folder: str) -> pd.DataFrame:
-    """
-    Load ALL Excel files inside folder whose filename starts with city name.
-    Tags each row with city name and source filename.
-
-    Example:
-        Mumbai/
-            Mumbai_Bandra_igr_processed_data_db1.xlsx   ← loaded
-            Mumbai_Andheri_igr_processed_data_db1.xlsx  ← loaded
-            notes.xlsx                                   ← skipped (no city prefix)
-    """
-    pattern = os.path.join(folder, f"{city}*.xlsx")
-    files   = glob.glob(pattern)
-
-    if not files:
-        pattern = os.path.join(folder, f"{city.lower()}*.xlsx")
-        files   = glob.glob(pattern)
-
-    if not files:
-        print(f"  ✗ No files found for {city} in: {folder}")
-        return pd.DataFrame()
-
-    print(f"  Found {len(files)} file(s) for {city}:")
-
-    frames = []
-    for filepath in sorted(files)[:1]:          # ← loads ALL files (removed [:2] limit)
-        filename = os.path.basename(filepath)
-        try:
-            df                = pd.read_excel(filepath)
-            df["city"]        = city
-            df["source_file"] = filename
-            frames.append(df)
-            print(f"    ✓ {filename}  ({len(df):,} rows)")
-        except Exception as e:
-            print(f"    ✗ Failed to read {filename}: {e}")
-
-    if not frames:
-        return pd.DataFrame()
-
-    combined = pd.concat(frames, ignore_index=True)
-
-    missing_cols = [
-        c for c in EXPECTED_COLUMNS
-        if c not in combined.columns.str.lower().tolist()
-    ]
-    if missing_cols:
-        print(f"    ⚠ Missing columns in {city}: {missing_cols}")
-
-    print(f"    → {city} total: {len(combined):,} rows from {len(frames)} file(s)")
-    return combined
 
 
 def save_result(df: pd.DataFrame, out_path: str):
@@ -301,29 +295,45 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     total_start = time.time()
 
-    # ── 1. Ask which cities to process ───────────────────────────────────────
-    available_cities = list(CITY_FOLDER_PATHS.keys())
-    selected_cities  = select_cities(available_cities)
+    # ── 1. Connect to DB and fetch available cities ───────────────────────────
+    print("\nConnecting to PostgreSQL...")
+    try:
+        engine = get_engine()
+        city_map = fetch_available_cities(engine)   # {city_name: city_id}
+    except Exception as e:
+        print(f"ERROR: Could not connect to database — {e}")
+        sys.exit(1)
 
-    # ── 2. Load all files for each selected city ──────────────────────────────
+    if not city_map:
+        print("ERROR: No cities found in the cities table.")
+        sys.exit(1)
+
+    available_cities = list(city_map.keys())
+    print(f"  ✓ Found {len(available_cities)} cities: {available_cities}")
+
+    # ── 2. Ask which cities to process ───────────────────────────────────────
+    selected_cities = select_cities(available_cities)
+
+    # ── 3. Load transaction data per selected city from DB ───────────────────
     print()
     city_dataframes = {}
 
     for city in selected_cities:
-        folder = CITY_FOLDER_PATHS[city]
-        print(f"\n  Loading {city} from: {folder}")
-        df_city = load_city_files(city, folder)
-
-        if df_city.empty:
-            print(f"  ⚠ Skipping {city} — no data loaded")
-        else:
-            city_dataframes[city] = df_city
+        city_id = city_map[city]
+        try:
+            df_city = load_city_from_db(engine, city, city_id)
+            if df_city.empty:
+                print(f"  ⚠ Skipping {city} — no data returned")
+            else:
+                city_dataframes[city] = df_city
+        except Exception as e:
+            print(f"  ✗ Failed to load {city}: {e}")
 
     if not city_dataframes:
         print("\nERROR: No data loaded at all. Check your folder paths.")
         sys.exit(1)
 
-    # ── 3. Combine all cities for preprocessing + mapping ────────────────────
+    # ── 4. Combine all cities for preprocessing + mapping ────────────────────
     # Preprocess and map once on the full dataset (efficient),
     # then split back by city for pipeline runs.
 
@@ -349,7 +359,7 @@ def main():
     dataframe = apply_bhk_mapping(dataframe, bhk_mapping)
     dataframe = apply_prop_mapping(dataframe, prop_type_mapping)
 
-    # ── 4. Define pipelines ───────────────────────────────────────────────────
+    # ── 5. Define pipelines ───────────────────────────────────────────────────
     # Each entry: (label, build_fn, category, period_type, period_value)
     #   category    : "project" | "location" | "city"
     #   period_type : "Overall" | "YoY" | "QoQ"
@@ -369,7 +379,7 @@ def main():
     # Accumulate in-memory: {category: [tagged DataFrames]}
     pipeline_results = {"project": [], "location": [], "city": []}
 
-    # ── 5. Run each city separately through all pipelines ────────────────────
+    # ── 6. Run each city separately through all pipelines ────────────────────
     #
     # WHY SEPARATELY:
     #   Running all cities in one build_fn() call causes pivot explosion.
@@ -422,7 +432,7 @@ def main():
             except Exception as e:
                 print(f"  ✗ FAILED [{label}]: {e}")
 
-    # ── 6. Concat → reorder BR cols → save one merged file per category ───────
+    # ── 7. Concat → reorder BR cols → save one merged file per category ───────
     print(f"\n{'='*50}")
     print("  Saving merged output files...")
     print(f"{'='*50}\n")

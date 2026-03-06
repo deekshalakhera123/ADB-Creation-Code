@@ -71,7 +71,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         print("  ⚠ 'net_carpet_area_sqmt' column not found — filling with NaN")
         df["carpet_sqft"] = np.nan
 
-    mask = df['property_category'] == 'Sale'
+    mask = df['property_category_id'] == 'Sale'
 
     if "agreement_price" in df.columns:
         df.loc[mask, "agreement_price"] = pd.to_numeric(df.loc[mask, "agreement_price"], errors='coerce')

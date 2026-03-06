@@ -7,6 +7,11 @@ All project-wide constants. Import from here — never hardcode elsewhere.
 import numpy as np
 import pandas as pd
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # reads .env from project root
+
 # ── Floor mapping ─────────────────────────────────────────────────────────────
 FLOOR_MAP = {
     "Stilt": 0, "Ground": 0, "Habitable": 0, "Upper Ground": 1,
@@ -155,3 +160,16 @@ def get_city_ranges(city: str) -> dict:
     }
     overrides = CITY_RANGES.get(city, {})
     return {**defaults, **overrides}
+
+
+DB_CONFIG = {
+    "host"    : os.getenv("DB_HOST", "localhost"),
+    "port"    : int(os.getenv("DB_PORT", 5432)),
+    "dbname"  : os.getenv("DB_NAME"),
+    "user"    : os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+}
+
+# Table names
+DB_CITIES_TABLE       = "city"            # columns: city_id, city_name (at minimum)
+DB_TRANSACTIONS_TABLE = "property_transaction_db1"   # columns: city_id + all transaction cols
