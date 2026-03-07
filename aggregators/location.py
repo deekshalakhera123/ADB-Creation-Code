@@ -121,7 +121,7 @@ def build_location_aggregation(
     dataframe['rate_on_net_ca']=dataframe['rate_on_net_ca'].astype(float)
     dataframe['agreement_price']=dataframe['agreement_price'].astype(float)
 
-    m = build_masks(dataframe, base_col="location")
+    m = build_masks(dataframe, base_col="loc_id")
 
     print("=== Analysis Masks Summary ===")
     print(f"Base (all transactions)  : {m['base'].sum()}")
@@ -142,7 +142,9 @@ def build_location_aggregation(
         base_df
         .groupby(group_cols)
         .agg(
+            location                        =("location",           "first"),
             city                            =("city",               "first"),
+            city_id                         =("city_id",             "first"),
             location_lat                    =("location_lat",        "first"),
             location_lng                    =("location_lng",        "first"),
             total_sales                     =("agreement_price",     "sum"),
@@ -161,7 +163,7 @@ def build_location_aggregation(
     # DA Summary
     
     location_wise_summary = location_wise_summary.merge(
-            da_summary.reset_index(), on=group_cols, how="left",
+            da_summary, on=group_cols, how="left",
         )
 
     # ========================================================
@@ -619,7 +621,7 @@ def build_location_aggregation(
 def build_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
     r = city_ranges or {}
     return build_location_aggregation(
-        df, ["location"], "location",
+        df, ["loc_id"], "loc_id",
         rate_min  = r.get("MIN_RATE",  MIN_RATE),
         rate_max  = r.get("MAX_RATE",  MAX_RATE),
         price_min = r.get("MIN_PRICE", MIN_PRICE),
@@ -632,7 +634,7 @@ def build_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFr
 def build_yoy_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
     r = city_ranges or {}
     base = build_location_aggregation(
-        df, ["location", "year"], "location",
+        df, ["loc_id", "year"], "loc_id",
         rate_min  = r.get("MIN_RATE",  MIN_RATE),
         rate_max  = r.get("MAX_RATE",  MAX_RATE),
         price_min = r.get("MIN_PRICE", MIN_PRICE),
@@ -640,13 +642,13 @@ def build_yoy_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.Da
         area_min  = r.get("MIN_AREA",  MIN_AREA),
         area_max  = r.get("MAX_AREA",  MAX_AREA),
     )
-    return base.sort_values(["location", "year"])
+    return base.sort_values(["loc_id", "year"])
 
 
 def build_qoq_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.DataFrame:
     r = city_ranges or {}
     base = build_location_aggregation(
-        df, ["location", "quarter"], "location",
+        df, ["loc_id", "quarter"], "loc_id",
         rate_min  = r.get("MIN_RATE",  MIN_RATE),
         rate_max  = r.get("MAX_RATE",  MAX_RATE),
         price_min = r.get("MIN_PRICE", MIN_PRICE),
@@ -654,4 +656,4 @@ def build_qoq_location_wise(df: pd.DataFrame, city_ranges: dict = None) -> pd.Da
         area_min  = r.get("MIN_AREA",  MIN_AREA),
         area_max  = r.get("MAX_AREA",  MAX_AREA),
     )
-    return base.sort_values(["location", "quarter"])
+    return base.sort_values(["loc_id", "quarter"])

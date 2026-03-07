@@ -120,8 +120,6 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     else:
         print("  ⚠ 'property_type_raw' column not found — filling with 'Other'")
         df["project_type"] = df.get("project_type", "Other")
-        # print("  ⚠ 'project_type' and 'property_type_raw' columns not found — filling with 'Other'")
-        # df["project_type"] = "Other"
 
     # Buyer pincode
     if "buyer_pincode" in df.columns:

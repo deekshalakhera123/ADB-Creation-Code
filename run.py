@@ -417,7 +417,11 @@ def main():
             print(f"\n  Running {label}...")
             t = time.time()
             try:
-                result = build_fn(city_df)
+
+                if category in ("location", "city"):
+                    result = build_fn(city_df, city_ranges=city_ranges)
+                else:
+                    result = build_fn(city_df)
 
                 if result is None or result.empty:
                     print(f"  ⚠ Empty result — skipped")

@@ -12,14 +12,14 @@ from config import NON_BHK_VALUES
 
 # ── Mask builder ──────────────────────────────────────────────────────────────
 
-def build_masks(dataframe: pd.DataFrame, base_col: str = "project_name") -> dict:
+def build_masks(dataframe: pd.DataFrame, base_col: str = "proj_id") -> dict:
     """
     Build all boolean masks needed by the pipeline.
 
     Parameters
     ----------
     base_col : the column whose notna() defines the base population
-               ('project_name' for project-wise, 'city' for city-wise, etc.)
+               ('proj_id' for project-wise, 'city' for city-wise, etc.)
     """
     base_mask         = dataframe[base_col].notna()
     valid_price_mask  = dataframe["agreement_price"] > 0

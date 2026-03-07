@@ -82,7 +82,7 @@ def build_project_aggregation(
 
     print("data in dataframe ", dataframe.shape)
 
-    m = build_masks(dataframe, base_col="project_name")
+    m = build_masks(dataframe, base_col="proj_id")
 
     print("=== Analysis Masks Summary ===")
     print(f"Base (all transactions)  : {m['base'].sum()}")
@@ -99,16 +99,19 @@ def build_project_aggregation(
     # ========================================================
     # BASE AGGREGATION
     # ========================================================
-
     project_wise_summary = (
         base_df
         .groupby(group_cols)
         .agg(
+            index                               =("index","first"),
+            project                             =('project_name',"first"),
             location                            =("location", "first"),
+            location_id                         =("location_id",             "first"),
             # igr_village_list                    =('igr_village', lambda x:list(x.unique())),
             project_lat                         =("project_lat",             "first"),
             project_lng                         =("project_lng",             "first"),
             city                                =("city",                    "first"),
+            city_id                             =("city_id",                 "first"),
             total_sales                         =("agreement_price",         "sum"),
             total_ca_consumed_sqft_igr          =("carpet_sqft",            "sum"),
             total_transactions                  =("document_no",             "count"),
@@ -550,7 +553,11 @@ def build_project_aggregation(
     project_wise_summary.columns = project_wise_summary.columns.str.lower()
 
     # Round plain float columns
+
+    # Round plain float columns
     float_cols = project_wise_summary.select_dtypes(include='float').columns
+    float_cols = float_cols.difference(['project_lat', 'project_lng'])
+    project_wise_summary[float_cols] = project_wise_summary[float_cols].round(2)
     
     project_wise_summary[float_cols] = project_wise_summary[float_cols].round(2)
 
@@ -576,15 +583,15 @@ def build_project_aggregation(
 # ============================================================
 
 def build_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    return build_project_aggregation(df, ["index","project_name"],'project_name')
+    return build_project_aggregation(df, ["proj_id"],'proj_id')
 
 
 def build_yoy_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["index","project_name", "year"],'project_name')
-    base = base.sort_values(["index","project_name", "year"])
+    base = build_project_aggregation(df, ["proj_id", "year"],'proj_id')
+    base = base.sort_values(["proj_id", "year"])
     return base
 
 def build_qoq_project_wise(df: pd.DataFrame) -> pd.DataFrame:
-    base = build_project_aggregation(df, ["index","project_name", "quarter"],'project_name')
-    base = base.sort_values(["index","project_name", "quarter"])
+    base = build_project_aggregation(df, ["proj_id", "quarter"],'proj_id')
+    base = base.sort_values(["proj_id", "quarter"])
     return base

@@ -90,8 +90,6 @@ def _build_rate_bins_generalize(
     start = int(min_val)
     end   = int(max_val)
 
-    start = int(min_val)
-    end   = int(max_val)
     inner = list(range(start, end + interval, interval))
     
     edges  = [-np.inf] + inner + [np.inf]
