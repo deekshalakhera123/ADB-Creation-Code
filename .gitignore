@@ -8,6 +8,10 @@ __pycache__/
 venv/
 env/
 
+# Output files
+*.xlsx
+*.csv
+
 
 # OS
 .DS_Store
